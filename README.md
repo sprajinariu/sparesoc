@@ -29,10 +29,20 @@ Boot address: `0x100080` (RAM base + 0x80).
 
 ### Prerequisites
 
-- **WSL / Linux** — builds do not run under native Windows
-- **FuseSoC** — `pip install fusesoc`
-- **Verilator** — for linting and simulation
-- **RISC-V GCC toolchain** — for compiling software (`riscv32-unknown-elf-gcc`)
+- **WSL / Linux** — builds do not run under native Windows.
+- **[Verilator](https://www.veripool.org/verilator/)** — for linting and simulation.
+  Linux package managers often ship an old version; building from source is
+  recommended.
+- **FuseSoC** — install with `pip3 install fusesoc`.
+- **Python dependencies** — install the Ibex Python requirements:
+  ```bash
+  pip3 install -U -r hw/ip/ibex/python-requirements.txt
+  ```
+- **RISC-V GCC toolchain** — lowRISC provides pre-built toolchains at
+  <https://github.com/lowRISC/lowrisc-toolchains/releases>.
+  The compiler prefix should be `riscv32-unknown-elf-`.
+- **libelf** — on Debian/Ubuntu: `sudo apt-get install libelf-dev`.
+- **srecord** (optional, for vmem files) — on Debian/Ubuntu: `sudo apt-get install srecord`.
 
 ### Clone and initialize
 
