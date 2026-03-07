@@ -18,6 +18,16 @@ filesets:
     files:
       - lint/verilator_waiver.vlt: {file_type: vlt}
 
+  files_verilator_sim:
+    depend:
+      - lowrisc:dv_verilator:memutil_verilator
+      - lowrisc:dv_verilator:simutil_verilator
+      - lowrisc:dv_verilator:ibex_pcounts
+    files:
+      - ../dv/verilator/opensoc_top_sim.cc: {file_type: cppSource}
+      - ../dv/verilator/opensoc_top_sim.h: {file_type: cppSource, is_include_file: true}
+      - ../dv/verilator/opensoc_top_main.cc: {file_type: cppSource}
+
 parameters:
   RV32M:
     datatype: str
@@ -65,3 +75,20 @@ targets:
           - "-Wall"
           - "-Wno-REDEFMACRO"
           - "--unroll-count 72"
+
+  sim:
+    <<: *default_target
+    default_tool: verilator
+    filesets_append:
+      - files_verilator_sim
+    tools:
+      verilator:
+        mode: cc
+        verilator_options:
+          - "-Wall"
+          - "-Wno-REDEFMACRO"
+          - "--unroll-count 72"
+          - "--trace-fst"
+          - "--trace-structs"
+          - '-CFLAGS "-std=c++17 -Wall -DVM_TRACE_FMT_FST -DTOPLEVEL_NAME=opensoc_top"'
+          - '-LDFLAGS "-pthread -lutil -lelf"'
