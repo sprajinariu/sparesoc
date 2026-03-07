@@ -3,7 +3,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 FUSESOC = fusesoc
-CORES_ROOT = --cores-root=. --cores-root=hw/ip/ibex --cores-root=hw/ip/ibex/vendor/lowrisc_ip
+CORES_ROOT = --cores-root=. --cores-root=hw/ip/ibex --cores-root=hw/ip/ibex/vendor/lowrisc_ip \
+             --cores-root=hw/ip/common_cells --cores-root=hw/ip/pulp_axi
 
 .PHONY: lint
 lint:

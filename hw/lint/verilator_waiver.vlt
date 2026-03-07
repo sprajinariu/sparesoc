@@ -16,3 +16,57 @@
 // -GRV32E=1'b1) cause WIDTH warnings. Waive for opensoc_top.sv.
 lint_off -rule WIDTH -file "*/rtl/opensoc_top.sv"
          -match "*expects 1 bits*Initial value's CONST '32'h1'*"
+
+// Packed struct literal fields (xbar_cfg_t, xbar_rule_32_t) trigger WIDTHCONCAT
+lint_off -rule WIDTHCONCAT -file "*/rtl/opensoc_top.sv"
+
+// Pre-existing ibex/lowrisc warnings that surface with AXI dependencies
+lint_off -rule REDEFMACRO    -file "*prim_assert*"
+lint_off -rule UNUSEDSIGNAL  -file "*ibex_top.sv"
+lint_off -rule UNUSEDSIGNAL  -file "*ibex_core.sv"
+
+// Unused signals from AXI bridges in opensoc_top
+lint_off -rule UNUSED -file "*/rtl/opensoc_top.sv"
+         -match "*axi_to_mem_busy*"
+lint_off -rule UNUSED -file "*/rtl/opensoc_top.sv"
+         -match "*mem_atop*"
+lint_off -rule UNUSED -file "*/rtl/opensoc_top.sv"
+         -match "*timer_err_unused*"
+
+// Third-party IP: PULP AXI modules — waive all lint rules
+lint_off -rule WIDTH          -file "*/pulp-platform.org*axi*"
+lint_off -rule UNUSED         -file "*/pulp-platform.org*axi*"
+lint_off -rule UNDRIVEN       -file "*/pulp-platform.org*axi*"
+lint_off -rule CASEINCOMPLETE -file "*/pulp-platform.org*axi*"
+lint_off -rule UNSIGNED       -file "*/pulp-platform.org*axi*"
+lint_off -rule PINMISSING     -file "*/pulp-platform.org*axi*"
+lint_off -rule IMPLICIT       -file "*/pulp-platform.org*axi*"
+lint_off -rule LITENDIAN      -file "*/pulp-platform.org*axi*"
+lint_off -rule DECLFILENAME   -file "*/pulp-platform.org*axi*"
+lint_off -rule UNOPTFLAT      -file "*/pulp-platform.org*axi*"
+lint_off -rule WIDTHCONCAT    -file "*/pulp-platform.org*axi*"
+lint_off -rule WIDTHTRUNC     -file "*/pulp-platform.org*axi*"
+lint_off -rule CMPCONST       -file "*/pulp-platform.org*axi*"
+lint_off -rule BLKANDNBLK     -file "*/pulp-platform.org*axi*"
+lint_off -rule MODDUP         -file "*/pulp-platform.org*axi*"
+lint_off -rule GENUNNAMED     -file "*/pulp-platform.org*axi*"
+lint_off -rule UNUSEDSIGNAL   -file "*/pulp-platform.org*axi*"
+
+// Third-party IP: PULP common_cells — waive all lint rules
+lint_off -rule WIDTH          -file "*/pulp-platform.org*common_cells*"
+lint_off -rule UNUSED         -file "*/pulp-platform.org*common_cells*"
+lint_off -rule UNDRIVEN       -file "*/pulp-platform.org*common_cells*"
+lint_off -rule CASEINCOMPLETE -file "*/pulp-platform.org*common_cells*"
+lint_off -rule UNSIGNED       -file "*/pulp-platform.org*common_cells*"
+lint_off -rule PINMISSING     -file "*/pulp-platform.org*common_cells*"
+lint_off -rule IMPLICIT       -file "*/pulp-platform.org*common_cells*"
+lint_off -rule LITENDIAN      -file "*/pulp-platform.org*common_cells*"
+lint_off -rule DECLFILENAME   -file "*/pulp-platform.org*common_cells*"
+lint_off -rule UNOPTFLAT      -file "*/pulp-platform.org*common_cells*"
+lint_off -rule WIDTHCONCAT    -file "*/pulp-platform.org*common_cells*"
+lint_off -rule WIDTHTRUNC     -file "*/pulp-platform.org*common_cells*"
+lint_off -rule CMPCONST       -file "*/pulp-platform.org*common_cells*"
+lint_off -rule BLKANDNBLK     -file "*/pulp-platform.org*common_cells*"
+lint_off -rule MODDUP         -file "*/pulp-platform.org*common_cells*"
+lint_off -rule GENUNNAMED     -file "*/pulp-platform.org*common_cells*"
+lint_off -rule UNUSEDSIGNAL   -file "*/pulp-platform.org*common_cells*"

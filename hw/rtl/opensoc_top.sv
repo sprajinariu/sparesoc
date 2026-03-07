@@ -29,6 +29,8 @@
   `define INSTR_CYCLE_DELAY 0
 `endif
 
+`include "axi/typedef.svh"
+
 /**
  * OpenSoC Top-Level
  *
@@ -39,6 +41,10 @@
  * It is designed to be used with verilator but should work with other
  * simulators, a small amount of work may be required to support the
  * simulator_ctrl module.
+ *
+ * The interconnect uses a PULP AXI4 crossbar (axi_xbar) with two master ports
+ * (instruction fetch and data) bridged via axi_from_mem, and three slave ports
+ * (RAM, SimCtrl, Timer) bridged via axi_to_mem.
  */
 
 module opensoc_top (
@@ -69,67 +75,116 @@ module opensoc_top (
 
   logic clk_sys = 1'b0, rst_sys_n;
 
-  typedef enum logic {
-    CoreD
-  } bus_host_e;
-
-  typedef enum logic[1:0] {
-    Ram,
-    SimCtrl,
-    Timer
-  } bus_device_e;
-
-  localparam int NrDevices = 3;
-  localparam int NrHosts = 1;
-
   // interrupts
   logic timer_irq;
 
-  // host and device signals
-  logic           host_req    [NrHosts];
-  logic           host_gnt    [NrHosts];
-  logic [31:0]    host_addr   [NrHosts];
-  logic           host_we     [NrHosts];
-  logic [ 3:0]    host_be     [NrHosts];
-  logic [31:0]    host_wdata  [NrHosts];
-  logic           host_rvalid [NrHosts];
-  logic [31:0]    host_rdata  [NrHosts];
-  logic           host_err    [NrHosts];
+  // -------------------------------------------------------------------------
+  // AXI type parameters
+  // -------------------------------------------------------------------------
+  localparam int unsigned AxiAddrWidth  = 32;
+  localparam int unsigned AxiDataWidth  = 32;
+  localparam int unsigned AxiStrbWidth  = AxiDataWidth / 8;
+  localparam int unsigned AxiIdWidthIn  = 1;   // ID width at xbar slave ports (master side)
+  localparam int unsigned AxiIdWidthOut = AxiIdWidthIn + $clog2(2); // xbar prepends bits for 2 slave ports
+  localparam int unsigned AxiUserWidth  = 1;
 
-  logic [6:0]     data_rdata_intg;
-  logic [6:0]     instr_rdata_intg;
+  // AXI type definitions — slave-port side (master-facing, narrow ID)
+  typedef logic [AxiAddrWidth-1:0]  axi_addr_t;
+  typedef logic [AxiDataWidth-1:0]  axi_data_t;
+  typedef logic [AxiStrbWidth-1:0]  axi_strb_t;
+  typedef logic [AxiIdWidthIn-1:0]  axi_id_in_t;
+  typedef logic [AxiIdWidthOut-1:0] axi_id_out_t;
+  typedef logic [AxiUserWidth-1:0]  axi_user_t;
 
-  // devices (slaves)
-  logic           device_req    [NrDevices];
-  logic [31:0]    device_addr   [NrDevices];
-  logic           device_we     [NrDevices];
-  logic [ 3:0]    device_be     [NrDevices];
-  logic [31:0]    device_wdata  [NrDevices];
-  logic           device_rvalid [NrDevices];
-  logic [31:0]    device_rdata  [NrDevices];
-  logic           device_err    [NrDevices];
+  // Slave-port types (master-facing, narrow ID)
+  `AXI_TYPEDEF_ALL(axi_in, axi_addr_t, axi_id_in_t, axi_data_t, axi_strb_t, axi_user_t)
 
-  // Device address mapping
-  logic [31:0] cfg_device_addr_base [NrDevices];
-  logic [31:0] cfg_device_addr_mask [NrDevices];
-  assign cfg_device_addr_base[Ram] = 32'h100000;
-  assign cfg_device_addr_mask[Ram] = ~32'hFFFFF; // 1 MB
-  assign cfg_device_addr_base[SimCtrl] = 32'h20000;
-  assign cfg_device_addr_mask[SimCtrl] = ~32'h3FF; // 1 kB
-  assign cfg_device_addr_base[Timer] = 32'h30000;
-  assign cfg_device_addr_mask[Timer] = ~32'h3FF; // 1 kB
+  // Master-port types (slave-facing, wide ID)
+  `AXI_TYPEDEF_ALL(axi_out, axi_addr_t, axi_id_out_t, axi_data_t, axi_strb_t, axi_user_t)
 
-  // Instruction fetch signals
-  logic instr_req;
-  logic instr_gnt;
-  logic instr_rvalid;
+  // -------------------------------------------------------------------------
+  // Crossbar configuration
+  // -------------------------------------------------------------------------
+  localparam int unsigned NumMasters = 2; // instr + data (xbar "slave ports")
+  localparam int unsigned NumSlaves  = 3; // RAM, SimCtrl, Timer (xbar "master ports")
+  localparam int unsigned NumRules   = 3;
+
+  localparam axi_pkg::xbar_cfg_t XbarCfg = '{
+    NoSlvPorts:         NumMasters,
+    NoMstPorts:         NumSlaves,
+    MaxMstTrans:        4,
+    MaxSlvTrans:        4,
+    FallThrough:        1'b0,
+    LatencyMode:        axi_pkg::NO_LATENCY,
+    PipelineStages:     0,
+    AxiIdWidthSlvPorts: AxiIdWidthIn,
+    AxiIdUsedSlvPorts:  AxiIdWidthIn,
+    UniqueIds:          1'b0,
+    AxiAddrWidth:       AxiAddrWidth,
+    AxiDataWidth:       AxiDataWidth,
+    NoAddrRules:        NumRules
+  };
+
+  // Address map: same memory map as before
+  localparam axi_pkg::xbar_rule_32_t [NumRules-1:0] AddrMap = '{
+    '{ idx: 32'd0, start_addr: 32'h0010_0000, end_addr: 32'h0020_0000 }, // RAM  1 MB
+    '{ idx: 32'd1, start_addr: 32'h0002_0000, end_addr: 32'h0002_0400 }, // SimCtrl 1 kB
+    '{ idx: 32'd2, start_addr: 32'h0003_0000, end_addr: 32'h0003_0400 }  // Timer 1 kB
+  };
+
+  // -------------------------------------------------------------------------
+  // Ibex instruction-fetch signals
+  // -------------------------------------------------------------------------
+  logic        instr_req;
+  logic        instr_gnt;
+  logic        instr_rvalid;
   logic [31:0] instr_addr;
   logic [31:0] instr_rdata;
-  logic instr_err;
+  logic        instr_err;
 
-  assign instr_gnt = instr_req;
-  assign instr_err = '0;
+  // -------------------------------------------------------------------------
+  // Ibex data-port signals
+  // -------------------------------------------------------------------------
+  logic        data_req;
+  logic        data_gnt;
+  logic        data_rvalid;
+  logic        data_we;
+  logic [ 3:0] data_be;
+  logic [31:0] data_addr;
+  logic [31:0] data_wdata;
+  logic [31:0] data_rdata;
+  logic        data_err;
 
+  // ECC integrity signals
+  logic [6:0] data_rdata_intg;
+  logic [6:0] instr_rdata_intg;
+
+  // -------------------------------------------------------------------------
+  // AXI signal bundles
+  // -------------------------------------------------------------------------
+  // From axi_from_mem bridges (xbar slave-port side)
+  axi_in_req_t  [NumMasters-1:0] xbar_slv_req;
+  axi_in_resp_t [NumMasters-1:0] xbar_slv_resp;
+
+  // To axi_to_mem bridges (xbar master-port side)
+  axi_out_req_t  [NumSlaves-1:0] xbar_mst_req;
+  axi_out_resp_t [NumSlaves-1:0] xbar_mst_resp;
+
+  // -------------------------------------------------------------------------
+  // Peripheral memory-interface signals (from axi_to_mem)
+  // -------------------------------------------------------------------------
+  logic        mem_req   [NumSlaves];
+  logic        mem_gnt   [NumSlaves];
+  logic [31:0] mem_addr  [NumSlaves];
+  logic [31:0] mem_wdata [NumSlaves];
+  logic [ 3:0] mem_strb  [NumSlaves];
+  logic        mem_we    [NumSlaves];
+  logic        mem_rvalid[NumSlaves];
+  logic [31:0] mem_rdata [NumSlaves];
+
+  // -------------------------------------------------------------------------
+  // Clock and reset
+  // -------------------------------------------------------------------------
   `ifdef VERILATOR
     assign clk_sys = IO_CLK;
     assign rst_sys_n = IO_RST_N;
@@ -145,48 +200,15 @@ module opensoc_top (
     end
   `endif
 
-  // Tie-off unused error signals
-  assign device_err[Ram] = 1'b0;
-  assign device_err[SimCtrl] = 1'b0;
-
-  bus #(
-    .NrDevices    ( NrDevices ),
-    .NrHosts      ( NrHosts   ),
-    .DataWidth    ( 32        ),
-    .AddressWidth ( 32        )
-  ) u_bus (
-    .clk_i               (clk_sys),
-    .rst_ni              (rst_sys_n),
-
-    .host_req_i          (host_req     ),
-    .host_gnt_o          (host_gnt     ),
-    .host_addr_i         (host_addr    ),
-    .host_we_i           (host_we      ),
-    .host_be_i           (host_be      ),
-    .host_wdata_i        (host_wdata   ),
-    .host_rvalid_o       (host_rvalid  ),
-    .host_rdata_o        (host_rdata   ),
-    .host_err_o          (host_err     ),
-
-    .device_req_o        (device_req   ),
-    .device_addr_o       (device_addr  ),
-    .device_we_o         (device_we    ),
-    .device_be_o         (device_be    ),
-    .device_wdata_o      (device_wdata ),
-    .device_rvalid_i     (device_rvalid),
-    .device_rdata_i      (device_rdata ),
-    .device_err_i        (device_err   ),
-
-    .cfg_device_addr_base,
-    .cfg_device_addr_mask
-  );
-
+  // -------------------------------------------------------------------------
+  // ECC integrity (SecureIbex only)
+  // -------------------------------------------------------------------------
   if (SecureIbex) begin : g_mem_rdata_ecc
     logic [31:0] unused_data_rdata;
     logic [31:0] unused_instr_rdata;
 
     prim_secded_inv_39_32_enc u_data_rdata_intg_gen (
-      .data_i (host_rdata[CoreD]),
+      .data_i (data_rdata),
       .data_o ({data_rdata_intg, unused_data_rdata})
     );
 
@@ -199,6 +221,9 @@ module opensoc_top (
     assign instr_rdata_intg = '0;
   end
 
+  // -------------------------------------------------------------------------
+  // Ibex CPU
+  // -------------------------------------------------------------------------
   ibex_top_tracing #(
       .SecureIbex      ( SecureIbex       ),
       .LockstepOffset  ( LockstepOffset   ),
@@ -246,17 +271,17 @@ module opensoc_top (
       .instr_rdata_intg_i        (instr_rdata_intg),
       .instr_err_i               (instr_err),
 
-      .data_req_o                (host_req[CoreD]),
-      .data_gnt_i                (host_gnt[CoreD]),
-      .data_rvalid_i             (host_rvalid[CoreD]),
-      .data_we_o                 (host_we[CoreD]),
-      .data_be_o                 (host_be[CoreD]),
-      .data_addr_o               (host_addr[CoreD]),
-      .data_wdata_o              (host_wdata[CoreD]),
+      .data_req_o                (data_req),
+      .data_gnt_i                (data_gnt),
+      .data_rvalid_i             (data_rvalid),
+      .data_we_o                 (data_we),
+      .data_be_o                 (data_be),
+      .data_addr_o               (data_addr),
+      .data_wdata_o              (data_wdata),
       .data_wdata_intg_o         (),
-      .data_rdata_i              (host_rdata[CoreD]),
+      .data_rdata_i              (data_rdata),
       .data_rdata_intg_i         (data_rdata_intg),
-      .data_err_i                (host_err[CoreD]),
+      .data_err_i                (data_err),
 
       .irq_software_i            (1'b0),
       .irq_timer_i               (timer_irq),
@@ -292,46 +317,178 @@ module opensoc_top (
       .instr_addr_shadow_o       ()
     );
 
-  // SRAM block for instruction and data storage
-  ram_2p #(
+  // -------------------------------------------------------------------------
+  // AXI bridges: Ibex memory ports → AXI (axi_from_mem)
+  // -------------------------------------------------------------------------
+
+  // Instruction port (read-only)
+  axi_from_mem #(
+    .MemAddrWidth ( 32              ),
+    .AxiAddrWidth ( AxiAddrWidth    ),
+    .DataWidth    ( AxiDataWidth    ),
+    .MaxRequests  ( 2               ),
+    .AxiProt      ( 3'b000          ),
+    .axi_req_t    ( axi_in_req_t    ),
+    .axi_rsp_t    ( axi_in_resp_t   )
+  ) u_axi_from_mem_instr (
+    .clk_i           (clk_sys),
+    .rst_ni          (rst_sys_n),
+    .mem_req_i       (instr_req),
+    .mem_addr_i      (instr_addr),
+    .mem_we_i        (1'b0),
+    .mem_wdata_i     (32'b0),
+    .mem_be_i        (4'b1111),
+    .mem_gnt_o       (instr_gnt),
+    .mem_rsp_valid_o (instr_rvalid),
+    .mem_rsp_rdata_o (instr_rdata),
+    .mem_rsp_error_o (instr_err),
+    .slv_aw_cache_i  (axi_pkg::CACHE_MODIFIABLE),
+    .slv_ar_cache_i  (axi_pkg::CACHE_MODIFIABLE),
+    .axi_req_o       (xbar_slv_req[0]),
+    .axi_rsp_i       (xbar_slv_resp[0])
+  );
+
+  // Data port (read/write)
+  axi_from_mem #(
+    .MemAddrWidth ( 32              ),
+    .AxiAddrWidth ( AxiAddrWidth    ),
+    .DataWidth    ( AxiDataWidth    ),
+    .MaxRequests  ( 2               ),
+    .AxiProt      ( 3'b000          ),
+    .axi_req_t    ( axi_in_req_t    ),
+    .axi_rsp_t    ( axi_in_resp_t   )
+  ) u_axi_from_mem_data (
+    .clk_i           (clk_sys),
+    .rst_ni          (rst_sys_n),
+    .mem_req_i       (data_req),
+    .mem_addr_i      (data_addr),
+    .mem_we_i        (data_we),
+    .mem_wdata_i     (data_wdata),
+    .mem_be_i        (data_be),
+    .mem_gnt_o       (data_gnt),
+    .mem_rsp_valid_o (data_rvalid),
+    .mem_rsp_rdata_o (data_rdata),
+    .mem_rsp_error_o (data_err),
+    .slv_aw_cache_i  (axi_pkg::CACHE_MODIFIABLE),
+    .slv_ar_cache_i  (axi_pkg::CACHE_MODIFIABLE),
+    .axi_req_o       (xbar_slv_req[1]),
+    .axi_rsp_i       (xbar_slv_resp[1])
+  );
+
+  // -------------------------------------------------------------------------
+  // AXI crossbar
+  // -------------------------------------------------------------------------
+  axi_xbar #(
+    .Cfg           ( XbarCfg               ),
+    .ATOPs         ( 1'b0                  ),
+    .Connectivity  ( '1                    ),
+    .slv_aw_chan_t ( axi_in_aw_chan_t      ),
+    .mst_aw_chan_t ( axi_out_aw_chan_t     ),
+    .w_chan_t      ( axi_in_w_chan_t       ),
+    .slv_b_chan_t  ( axi_in_b_chan_t       ),
+    .mst_b_chan_t  ( axi_out_b_chan_t      ),
+    .slv_ar_chan_t ( axi_in_ar_chan_t      ),
+    .mst_ar_chan_t ( axi_out_ar_chan_t     ),
+    .slv_r_chan_t  ( axi_in_r_chan_t       ),
+    .mst_r_chan_t  ( axi_out_r_chan_t      ),
+    .slv_req_t     ( axi_in_req_t          ),
+    .slv_resp_t    ( axi_in_resp_t         ),
+    .mst_req_t     ( axi_out_req_t         ),
+    .mst_resp_t    ( axi_out_resp_t        ),
+    .rule_t        ( axi_pkg::xbar_rule_32_t )
+  ) u_axi_xbar (
+    .clk_i                  (clk_sys),
+    .rst_ni                 (rst_sys_n),
+    .test_i                 (1'b0),
+    .slv_ports_req_i        (xbar_slv_req),
+    .slv_ports_resp_o       (xbar_slv_resp),
+    .mst_ports_req_o        (xbar_mst_req),
+    .mst_ports_resp_i       (xbar_mst_resp),
+    .addr_map_i             (AddrMap),
+    .en_default_mst_port_i  ('0),
+    .default_mst_port_i     ('0)
+  );
+
+  // -------------------------------------------------------------------------
+  // AXI bridges: AXI → memory-mapped peripherals (axi_to_mem)
+  // -------------------------------------------------------------------------
+  // Unused signals from axi_to_mem
+  logic [NumSlaves-1:0] axi_to_mem_busy;
+  axi_pkg::atop_t       mem_atop [NumSlaves];
+
+  for (genvar i = 0; i < NumSlaves; i++) begin : gen_axi_to_mem
+    axi_to_mem #(
+      .axi_req_t  ( axi_out_req_t  ),
+      .axi_resp_t ( axi_out_resp_t ),
+      .AddrWidth  ( AxiAddrWidth   ),
+      .DataWidth  ( AxiDataWidth   ),
+      .IdWidth    ( AxiIdWidthOut  ),
+      .NumBanks   ( 1              ),
+      .BufDepth   ( 1              )
+    ) u_axi_to_mem (
+      .clk_i       (clk_sys),
+      .rst_ni      (rst_sys_n),
+      .busy_o      (axi_to_mem_busy[i]),
+      .axi_req_i   (xbar_mst_req[i]),
+      .axi_resp_o  (xbar_mst_resp[i]),
+      .mem_req_o   (mem_req[i]),
+      .mem_gnt_i   (mem_gnt[i]),
+      .mem_addr_o  (mem_addr[i]),
+      .mem_wdata_o (mem_wdata[i]),
+      .mem_strb_o  (mem_strb[i]),
+      .mem_atop_o  (mem_atop[i]),
+      .mem_we_o    (mem_we[i]),
+      .mem_rvalid_i(mem_rvalid[i]),
+      .mem_rdata_i (mem_rdata[i])
+    );
+  end
+
+  // All peripherals grant immediately (single-cycle grant)
+  assign mem_gnt[0] = mem_req[0]; // RAM
+  assign mem_gnt[1] = mem_req[1]; // SimCtrl
+  assign mem_gnt[2] = mem_req[2]; // Timer
+
+  // -------------------------------------------------------------------------
+  // SRAM (single-port, crossbar arbitrates instr vs data)
+  // -------------------------------------------------------------------------
+  ram_1p #(
       .Depth(1024*1024/4),
-      .BExtraDelay(`INSTR_CYCLE_DELAY),
       .MemInitFile(SRAMInitFile)
     ) u_ram (
       .clk_i       (clk_sys),
       .rst_ni      (rst_sys_n),
 
-      .a_req_i     (device_req[Ram]),
-      .a_we_i      (device_we[Ram]),
-      .a_be_i      (device_be[Ram]),
-      .a_addr_i    (device_addr[Ram]),
-      .a_wdata_i   (device_wdata[Ram]),
-      .a_rvalid_o  (device_rvalid[Ram]),
-      .a_rdata_o   (device_rdata[Ram]),
-
-      .b_req_i     (instr_req),
-      .b_we_i      (1'b0),
-      .b_be_i      (4'b0),
-      .b_addr_i    (instr_addr),
-      .b_wdata_i   (32'b0),
-      .b_rvalid_o  (instr_rvalid),
-      .b_rdata_o   (instr_rdata)
+      .req_i       (mem_req[0]),
+      .we_i        (mem_we[0]),
+      .be_i        (mem_strb[0]),
+      .addr_i      (mem_addr[0]),
+      .wdata_i     (mem_wdata[0]),
+      .rvalid_o    (mem_rvalid[0]),
+      .rdata_o     (mem_rdata[0])
     );
 
+  // -------------------------------------------------------------------------
+  // Simulator control
+  // -------------------------------------------------------------------------
   simulator_ctrl #(
     .LogName("opensoc_top.log")
     ) u_simulator_ctrl (
       .clk_i     (clk_sys),
       .rst_ni    (rst_sys_n),
 
-      .req_i     (device_req[SimCtrl]),
-      .we_i      (device_we[SimCtrl]),
-      .be_i      (device_be[SimCtrl]),
-      .addr_i    (device_addr[SimCtrl]),
-      .wdata_i   (device_wdata[SimCtrl]),
-      .rvalid_o  (device_rvalid[SimCtrl]),
-      .rdata_o   (device_rdata[SimCtrl])
+      .req_i     (mem_req[1]),
+      .we_i      (mem_we[1]),
+      .be_i      (mem_strb[1]),
+      .addr_i    (mem_addr[1]),
+      .wdata_i   (mem_wdata[1]),
+      .rvalid_o  (mem_rvalid[1]),
+      .rdata_o   (mem_rdata[1])
     );
+
+  // -------------------------------------------------------------------------
+  // Timer
+  // -------------------------------------------------------------------------
+  logic timer_err_unused;
 
   timer #(
     .DataWidth    (32),
@@ -340,14 +497,14 @@ module opensoc_top (
       .clk_i          (clk_sys),
       .rst_ni         (rst_sys_n),
 
-      .timer_req_i    (device_req[Timer]),
-      .timer_we_i     (device_we[Timer]),
-      .timer_be_i     (device_be[Timer]),
-      .timer_addr_i   (device_addr[Timer]),
-      .timer_wdata_i  (device_wdata[Timer]),
-      .timer_rvalid_o (device_rvalid[Timer]),
-      .timer_rdata_o  (device_rdata[Timer]),
-      .timer_err_o    (device_err[Timer]),
+      .timer_req_i    (mem_req[2]),
+      .timer_we_i     (mem_we[2]),
+      .timer_be_i     (mem_strb[2]),
+      .timer_addr_i   (mem_addr[2]),
+      .timer_wdata_i  (mem_wdata[2]),
+      .timer_rvalid_o (mem_rvalid[2]),
+      .timer_rdata_o  (mem_rdata[2]),
+      .timer_err_o    (timer_err_unused),
       .timer_intr_o   (timer_irq)
     );
 

@@ -9,6 +9,7 @@ filesets:
     depend:
       - lowrisc:ibex:ibex_top_tracing
       - lowrisc:ibex:sim_shared
+      - "pulp-platform.org::axi"
     files:
       - rtl/opensoc_top.sv
     file_type: systemVerilogSource
@@ -62,4 +63,5 @@ targets:
         mode: lint-only
         verilator_options:
           - "-Wall"
+          - "-Wno-REDEFMACRO"
           - "--unroll-count 72"

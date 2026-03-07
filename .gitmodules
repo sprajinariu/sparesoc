@@ -7,3 +7,6 @@
 [submodule "hw/ip/pulp_obi"]
 	path = hw/ip/pulp_obi
 	url = https://github.com/pulp-platform/obi
+[submodule "hw/ip/common_cells"]
+	path = hw/ip/common_cells
+	url = https://github.com/pulp-platform/common_cells.git
