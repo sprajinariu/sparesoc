@@ -1,0 +1,73 @@
+# OpenSoC
+
+A RISC-V System-on-Chip built on the lowRISC [Ibex](https://github.com/lowRISC/ibex) CPU core, using an AXI4 crossbar from [PULP Platform](https://github.com/pulp-platform/axi) to connect the CPU to memory and peripherals.
+
+## Architecture
+
+```
+opensoc_top (hw/rtl/opensoc_top.sv)
+├── ibex_top_tracing    — Ibex RISC-V core with trace output
+├── axi_from_mem ×2     — OBI-to-AXI bridges (instr port + data port)
+├── axi_xbar            — AXI4 crossbar (2 masters × 3 slaves)
+├── axi_to_mem ×3       — AXI-to-memory bridges (RAM, SimCtrl, Timer)
+├── ram_1p              — 1 MB single-port SRAM
+├── simulator_ctrl      — ASCII output and simulation halt
+└── timer               — Timer with interrupt
+```
+
+### Memory Map
+
+| Peripheral     | Base Address | Size  |
+|----------------|--------------|-------|
+| RAM            | `0x100000`   | 1 MB  |
+| Simulator Ctrl | `0x20000`    | 1 kB  |
+| Timer          | `0x30000`    | 1 kB  |
+
+Boot address: `0x100080` (RAM base + 0x80).
+
+## Getting Started
+
+### Prerequisites
+
+- **WSL / Linux** — builds do not run under native Windows
+- **FuseSoC** — `pip install fusesoc`
+- **Verilator** — for linting and simulation
+- **RISC-V GCC toolchain** — for compiling software (`riscv32-unknown-elf-gcc`)
+
+### Clone and initialize
+
+```bash
+git clone https://github.com/<your-org>/opensoc.git
+cd opensoc
+git submodule update --init --recursive
+```
+
+## Build Commands
+
+Run `make help` to list all targets:
+
+```
+make lint       - Run Verilator lint
+make sim        - Build Verilator simulator
+make sw-hello   - Build hello_test SW binary
+make run-hello  - Build and run hello_test on simulator
+make clean      - Remove build directory
+```
+
+## Repository Structure
+
+```
+hw/rtl/              — OpenSoC RTL (project source)
+hw/opensoc_top.core  — FuseSoC core file (dependencies & build targets)
+hw/lint/             — Verilator waiver files
+hw/ip/ibex/          — Ibex submodule (CPU core + shared sim RTL)
+hw/ip/pulp_axi/      — PULP AXI submodule (crossbar, bridges)
+hw/ip/common_cells/  — PULP common_cells submodule (required by pulp_axi)
+hw/ip/pulp_obi/      — PULP OBI submodule (for future use)
+dv/                  — Design verification
+sw/                  — Software
+```
+
+## License
+
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
