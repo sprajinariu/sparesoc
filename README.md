@@ -30,12 +30,25 @@ Boot address: `0x100080` (RAM base + 0x80).
 ### Prerequisites
 
 - **WSL / Linux** — builds do not run under native Windows.
-- **[Verilator](https://www.veripool.org/verilator/)** — for linting and simulation.
+- **[Verilator](https://www.veripool.org/verilator/)** (≥ 4.210) — for linting and simulation.
   Linux package managers often ship an old version; building from source is
-  recommended.
-- **FuseSoC** — install with `pip3 install fusesoc`.
-- **Python dependencies** — install the Ibex Python requirements:
+  recommended (see [full install guide](https://verilator.org/guide/latest/install.html)):
   ```bash
+  sudo apt-get install git help2man perl python3 make autoconf g++ flex bison ccache
+  sudo apt-get install libgoogle-perftools-dev numactl perl-doc
+  sudo apt-get install libfl2 libfl-dev        # Ubuntu only (ignore errors)
+  sudo apt-get install zlib1g zlib1g-dev       # Ubuntu only (ignore errors)
+  git clone https://github.com/verilator/verilator.git
+  cd verilator
+  git checkout v5.020   # or latest stable tag
+  autoconf
+  ./configure
+  make -j $(nproc)
+  sudo make install
+  ```
+- **FuseSoC and Python dependencies** — install with:
+  ```bash
+  pip3 install fusesoc
   pip3 install -U -r hw/ip/ibex/python-requirements.txt
   ```
 - **RISC-V GCC toolchain** — lowRISC provides pre-built toolchains at
@@ -47,7 +60,7 @@ Boot address: `0x100080` (RAM base + 0x80).
 ### Clone and initialize
 
 ```bash
-git clone https://github.com/<your-org>/opensoc.git
+git clone https://github.com/vladdum/opensoc.git
 cd opensoc
 git submodule update --init --recursive
 ```
