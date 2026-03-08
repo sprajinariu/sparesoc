@@ -43,13 +43,30 @@
  * simulator_ctrl module.
  *
  * The interconnect uses a PULP AXI4 crossbar (axi_xbar) with two master ports
- * (instruction fetch and data) bridged via axi_from_mem, and three slave ports
- * (RAM, SimCtrl, Timer) bridged via axi_to_mem.
+ * (instruction fetch and data) bridged via axi_from_mem, and six slave ports
+ * (RAM, SimCtrl, Timer, UART, GPIO, I2C) bridged via axi_to_mem.
  */
 
 module opensoc_top (
-  input IO_CLK,
-  input IO_RST_N
+  input  IO_CLK,
+  input  IO_RST_N,
+
+  // UART
+  output uart_tx_o,
+  input  uart_rx_i,
+
+  // GPIO
+  input  [31:0] gpio_i,
+  output [31:0] gpio_o,
+  output [31:0] gpio_oe,
+
+  // I2C (open-drain modeled as separate signals)
+  output i2c_scl_o,
+  output i2c_scl_oe,
+  input  i2c_scl_i,
+  output i2c_sda_o,
+  output i2c_sda_oe,
+  input  i2c_sda_i
 );
 
   parameter bit                 SecureIbex               = 1'b0;
@@ -77,6 +94,9 @@ module opensoc_top (
 
   // interrupts
   logic timer_irq;
+  logic uart_irq;
+  logic gpio_irq;
+  logic i2c_irq;
 
   // -------------------------------------------------------------------------
   // AXI type parameters
@@ -106,8 +126,8 @@ module opensoc_top (
   // Crossbar configuration
   // -------------------------------------------------------------------------
   localparam int unsigned NumMasters = 2; // instr + data (xbar "slave ports")
-  localparam int unsigned NumSlaves  = 3; // RAM, SimCtrl, Timer (xbar "master ports")
-  localparam int unsigned NumRules   = 3;
+  localparam int unsigned NumSlaves  = 6; // RAM, SimCtrl, Timer, UART, GPIO, I2C (xbar "master ports")
+  localparam int unsigned NumRules   = 6;
 
   localparam axi_pkg::xbar_cfg_t XbarCfg = '{
     NoSlvPorts:         NumMasters,
@@ -125,11 +145,14 @@ module opensoc_top (
     NoAddrRules:        NumRules
   };
 
-  // Address map: same memory map as before
+  // Address map
   localparam axi_pkg::xbar_rule_32_t [NumRules-1:0] AddrMap = '{
-    '{ idx: 32'd0, start_addr: 32'h0010_0000, end_addr: 32'h0020_0000 }, // RAM  1 MB
+    '{ idx: 32'd0, start_addr: 32'h0010_0000, end_addr: 32'h0020_0000 }, // RAM     1 MB
     '{ idx: 32'd1, start_addr: 32'h0002_0000, end_addr: 32'h0002_0400 }, // SimCtrl 1 kB
-    '{ idx: 32'd2, start_addr: 32'h0003_0000, end_addr: 32'h0003_0400 }  // Timer 1 kB
+    '{ idx: 32'd2, start_addr: 32'h0003_0000, end_addr: 32'h0003_0400 }, // Timer   1 kB
+    '{ idx: 32'd3, start_addr: 32'h0004_0000, end_addr: 32'h0004_0400 }, // UART    1 kB
+    '{ idx: 32'd4, start_addr: 32'h0005_0000, end_addr: 32'h0005_0400 }, // GPIO    1 kB
+    '{ idx: 32'd5, start_addr: 32'h0006_0000, end_addr: 32'h0006_0400 }  // I2C     1 kB
   };
 
   // -------------------------------------------------------------------------
@@ -286,7 +309,7 @@ module opensoc_top (
       .irq_software_i            (1'b0),
       .irq_timer_i               (timer_irq),
       .irq_external_i            (1'b0),
-      .irq_fast_i                (15'b0),
+      .irq_fast_i                ({12'b0, i2c_irq, gpio_irq, uart_irq}),
       .irq_nm_i                  (1'b0),
 
       .scramble_key_valid_i      ('0),
@@ -447,6 +470,9 @@ module opensoc_top (
   assign mem_gnt[0] = mem_req[0]; // RAM
   assign mem_gnt[1] = mem_req[1]; // SimCtrl
   assign mem_gnt[2] = mem_req[2]; // Timer
+  assign mem_gnt[3] = mem_req[3]; // UART
+  assign mem_gnt[4] = mem_req[4]; // GPIO
+  assign mem_gnt[5] = mem_req[5]; // I2C
 
   // -------------------------------------------------------------------------
   // SRAM (single-port, crossbar arbitrates instr vs data)
@@ -507,6 +533,74 @@ module opensoc_top (
       .timer_err_o    (timer_err_unused),
       .timer_intr_o   (timer_irq)
     );
+
+  // -------------------------------------------------------------------------
+  // UART
+  // -------------------------------------------------------------------------
+  uart u_uart (
+    .clk_i     (clk_sys),
+    .rst_ni    (rst_sys_n),
+
+    .req_i     (mem_req[3]),
+    .addr_i    (mem_addr[3]),
+    .we_i      (mem_we[3]),
+    .be_i      (mem_strb[3]),
+    .wdata_i   (mem_wdata[3]),
+    .rvalid_o  (mem_rvalid[3]),
+    .rdata_o   (mem_rdata[3]),
+
+    .irq_o     (uart_irq),
+
+    .uart_tx_o (uart_tx_o),
+    .uart_rx_i (uart_rx_i)
+  );
+
+  // -------------------------------------------------------------------------
+  // GPIO
+  // -------------------------------------------------------------------------
+  gpio u_gpio (
+    .clk_i     (clk_sys),
+    .rst_ni    (rst_sys_n),
+
+    .req_i     (mem_req[4]),
+    .addr_i    (mem_addr[4]),
+    .we_i      (mem_we[4]),
+    .be_i      (mem_strb[4]),
+    .wdata_i   (mem_wdata[4]),
+    .rvalid_o  (mem_rvalid[4]),
+    .rdata_o   (mem_rdata[4]),
+
+    .irq_o     (gpio_irq),
+
+    .gpio_i    (gpio_i),
+    .gpio_o    (gpio_o),
+    .gpio_oe   (gpio_oe)
+  );
+
+  // -------------------------------------------------------------------------
+  // I2C Controller
+  // -------------------------------------------------------------------------
+  i2c_controller u_i2c (
+    .clk_i      (clk_sys),
+    .rst_ni     (rst_sys_n),
+
+    .req_i      (mem_req[5]),
+    .addr_i     (mem_addr[5]),
+    .we_i       (mem_we[5]),
+    .be_i       (mem_strb[5]),
+    .wdata_i    (mem_wdata[5]),
+    .rvalid_o   (mem_rvalid[5]),
+    .rdata_o    (mem_rdata[5]),
+
+    .irq_o      (i2c_irq),
+
+    .i2c_scl_o  (i2c_scl_o),
+    .i2c_scl_oe (i2c_scl_oe),
+    .i2c_scl_i  (i2c_scl_i),
+    .i2c_sda_o  (i2c_sda_o),
+    .i2c_sda_oe (i2c_sda_oe),
+    .i2c_sda_i  (i2c_sda_i)
+  );
 
   export "DPI-C" function mhpmcounter_num;
 

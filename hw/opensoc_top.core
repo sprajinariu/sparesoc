@@ -12,6 +12,9 @@ filesets:
       - "pulp-platform.org::axi"
     files:
       - rtl/opensoc_top.sv
+      - rtl/uart.sv
+      - rtl/gpio.sv
+      - rtl/i2c_controller.sv
     file_type: systemVerilogSource
 
   files_lint_verilator:
