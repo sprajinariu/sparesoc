@@ -24,6 +24,10 @@ help:
 	@echo "  make sw-uart-recv    - Build uart_recv SW binary"
 	@echo "  make run-dual-uart   - Build and run dual-UART test"
 	@echo "  make clean           - Remove build directory"
+	@echo ""
+	@echo "Options:"
+	@echo "  TRACE=1              - Enable FST waveform dump (e.g. make run-hello TRACE=1)"
+	@echo "  WAVES=1              - Enable trace + open GTKWave after sim (e.g. make run-dual-uart WAVES=1)"
 
 .PHONY: clean
 clean:
@@ -40,6 +44,12 @@ sim:
 SW_DIR = hw/ip/ibex/examples/sw/simple_system
 SW_ARCH = rv32imc_zicsr_zifencei
 SIM_BIN = build/opensoc_soc_opensoc_top_0/sim-verilator/Vopensoc_top
+SIM_DIR = build/opensoc_soc_opensoc_top_0/sim-verilator
+
+# Pass TRACE=1 to enable FST waveform dump (e.g. make run-hello TRACE=1)
+# Pass WAVES=1 to also open GTKWave after simulation (implies TRACE=1)
+SIM_TRACE_FLAGS = $(if $(or $(TRACE),$(WAVES)),--trace,)
+GTKW_DIR = dv/verilator
 
 .PHONY: sw-hello
 sw-hello:
@@ -47,10 +57,11 @@ sw-hello:
 
 .PHONY: run-hello
 run-hello: sw-hello
-	cd build/opensoc_soc_opensoc_top_0/sim-verilator && \
-	  ./Vopensoc_top --meminit=ram,$(CURDIR)/$(SW_DIR)/hello_test/hello_test.elf
+	cd $(SIM_DIR) && \
+	  ./Vopensoc_top --meminit=ram,$(CURDIR)/$(SW_DIR)/hello_test/hello_test.elf $(SIM_TRACE_FLAGS)
 	@echo "--- Program output ---"
-	@cat build/opensoc_soc_opensoc_top_0/sim-verilator/opensoc_top.log
+	@cat $(SIM_DIR)/opensoc_top.log
+	$(if $(WAVES),gtkwave $(SIM_DIR)/sim.fst $(wildcard $(GTKW_DIR)/opensoc_top.gtkw) &,)
 
 SW_TEST_DIR = sw/tests
 
@@ -60,10 +71,11 @@ sw-uart:
 
 .PHONY: run-uart
 run-uart: sw-uart
-	cd build/opensoc_soc_opensoc_top_0/sim-verilator && \
-	  ./Vopensoc_top --meminit=ram,$(CURDIR)/$(SW_TEST_DIR)/uart_test/uart_test.elf
+	cd $(SIM_DIR) && \
+	  ./Vopensoc_top --meminit=ram,$(CURDIR)/$(SW_TEST_DIR)/uart_test/uart_test.elf $(SIM_TRACE_FLAGS)
 	@echo "--- Program output ---"
-	@cat build/opensoc_soc_opensoc_top_0/sim-verilator/opensoc_top.log
+	@cat $(SIM_DIR)/opensoc_top.log
+	$(if $(WAVES),gtkwave $(SIM_DIR)/sim.fst $(wildcard $(GTKW_DIR)/opensoc_top.gtkw) &,)
 
 .PHONY: sw-gpio
 sw-gpio:
@@ -71,10 +83,11 @@ sw-gpio:
 
 .PHONY: run-gpio
 run-gpio: sw-gpio
-	cd build/opensoc_soc_opensoc_top_0/sim-verilator && \
-	  ./Vopensoc_top --meminit=ram,$(CURDIR)/$(SW_TEST_DIR)/gpio_test/gpio_test.elf
+	cd $(SIM_DIR) && \
+	  ./Vopensoc_top --meminit=ram,$(CURDIR)/$(SW_TEST_DIR)/gpio_test/gpio_test.elf $(SIM_TRACE_FLAGS)
 	@echo "--- Program output ---"
-	@cat build/opensoc_soc_opensoc_top_0/sim-verilator/opensoc_top.log
+	@cat $(SIM_DIR)/opensoc_top.log
+	$(if $(WAVES),gtkwave $(SIM_DIR)/sim.fst $(wildcard $(GTKW_DIR)/opensoc_top.gtkw) &,)
 
 .PHONY: sw-i2c
 sw-i2c:
@@ -82,13 +95,15 @@ sw-i2c:
 
 .PHONY: run-i2c
 run-i2c: sw-i2c
-	cd build/opensoc_soc_opensoc_top_0/sim-verilator && \
-	  ./Vopensoc_top --meminit=ram,$(CURDIR)/$(SW_TEST_DIR)/i2c_test/i2c_test.elf
+	cd $(SIM_DIR) && \
+	  ./Vopensoc_top --meminit=ram,$(CURDIR)/$(SW_TEST_DIR)/i2c_test/i2c_test.elf $(SIM_TRACE_FLAGS)
 	@echo "--- Program output ---"
-	@cat build/opensoc_soc_opensoc_top_0/sim-verilator/opensoc_top.log
+	@cat $(SIM_DIR)/opensoc_top.log
+	$(if $(WAVES),gtkwave $(SIM_DIR)/sim.fst $(wildcard $(GTKW_DIR)/opensoc_top.gtkw) &,)
 
 # Dual-UART targets
 DUAL_SIM_BIN = build/opensoc_soc_opensoc_dual_uart_0/sim-verilator/Vopensoc_dual_uart
+DUAL_SIM_DIR = build/opensoc_soc_opensoc_dual_uart_0/sim-verilator
 
 .PHONY: sim-dual-uart
 sim-dual-uart:
@@ -104,9 +119,11 @@ sw-uart-recv:
 
 .PHONY: run-dual-uart
 run-dual-uart: sw-uart-send sw-uart-recv
-	cd build/opensoc_soc_opensoc_dual_uart_0/sim-verilator && \
+	cd $(DUAL_SIM_DIR) && \
 	  ./Vopensoc_dual_uart \
 	    --meminit=ram0,$(CURDIR)/$(SW_TEST_DIR)/uart_send/uart_send.elf \
-	    --meminit=ram1,$(CURDIR)/$(SW_TEST_DIR)/uart_recv/uart_recv.elf
+	    --meminit=ram1,$(CURDIR)/$(SW_TEST_DIR)/uart_recv/uart_recv.elf \
+	    $(SIM_TRACE_FLAGS)
 	@echo "--- SoC0 output ---"
-	@cat build/opensoc_soc_opensoc_dual_uart_0/sim-verilator/opensoc_top.log
+	@cat $(DUAL_SIM_DIR)/opensoc_top.log
+	$(if $(WAVES),gtkwave $(DUAL_SIM_DIR)/sim.fst $(wildcard $(GTKW_DIR)/opensoc_dual_uart.gtkw) &,)

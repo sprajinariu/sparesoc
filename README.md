@@ -61,6 +61,8 @@ Boot address: `0x100080` (RAM base + 0x80).
   <https://github.com/lowRISC/lowrisc-toolchains/releases>.
   The compiler prefix should be `riscv32-unknown-elf-`.
 - **libelf** — on Debian/Ubuntu: `sudo apt-get install libelf-dev`.
+- **GTKWave** (optional, for waveform viewing) — on Debian/Ubuntu: `sudo apt-get install gtkwave`.
+  Requires WSLg (WSL2 on Windows 10 21H2+) or an X server (e.g. VcXsrv) for GUI display.
 - **srecord** (optional, for vmem files) — on Debian/Ubuntu: `sudo apt-get install srecord`.
 
 ### Clone and initialize
@@ -91,7 +93,30 @@ make sw-uart-send    - Build uart_send SW binary
 make sw-uart-recv    - Build uart_recv SW binary
 make run-dual-uart   - Build and run dual-UART test
 make clean           - Remove build directory
+
+Options:
+  TRACE=1              - Enable FST waveform dump (e.g. make run-hello TRACE=1)
+  WAVES=1              - Enable trace + open GTKWave after sim (e.g. make run-dual-uart WAVES=1)
 ```
+
+### Waveform Viewing
+
+Install [GTKWave](http://gtkwave.sourceforge.net/) (`sudo apt install gtkwave` on Ubuntu/WSL).
+
+Use `WAVES=1` to automatically open GTKWave with a saved signal view after simulation:
+
+```bash
+make run-dual-uart WAVES=1
+```
+
+Or use `TRACE=1` to generate the trace file and open it manually:
+
+```bash
+make run-hello TRACE=1
+gtkwave build/opensoc_soc_opensoc_top_0/sim-verilator/sim.fst
+```
+
+Saved waveform views (`.gtkw` files) are stored in `dv/verilator/`.
 
 ## Repository Structure
 
