@@ -70,11 +70,21 @@ git submodule update --init --recursive
 Run `make help` to list all targets:
 
 ```
-make lint       - Run Verilator lint
-make sim        - Build Verilator simulator
-make sw-hello   - Build hello_test SW binary
-make run-hello  - Build and run hello_test on simulator
-make clean      - Remove build directory
+make lint            - Run Verilator lint
+make sim             - Build Verilator simulator
+make sw-hello        - Build hello_test SW binary
+make run-hello       - Build and run hello_test on simulator
+make sw-uart         - Build uart_test SW binary
+make run-uart        - Build and run uart_test on simulator
+make sw-gpio         - Build gpio_test SW binary
+make run-gpio        - Build and run gpio_test on simulator
+make sw-i2c          - Build i2c_test SW binary
+make run-i2c         - Build and run i2c_test on simulator
+make sim-dual-uart   - Build dual-UART Verilator simulator
+make sw-uart-send    - Build uart_send SW binary
+make sw-uart-recv    - Build uart_recv SW binary
+make run-dual-uart   - Build and run dual-UART test
+make clean           - Remove build directory
 ```
 
 ## Repository Structure
