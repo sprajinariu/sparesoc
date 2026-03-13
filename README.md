@@ -33,6 +33,36 @@ Boot address: `0x100080` (RAM base + 0x80).
 
 ## Getting Started
 
+### Installing Ubuntu via WSL (Windows only)
+
+All builds require a Linux environment. On Windows, use **WSL (Windows Subsystem for Linux)** to run Ubuntu:
+
+1. Open **PowerShell as Administrator** and run:
+   ```powershell
+   wsl --install
+   ```
+   This installs WSL 2 and Ubuntu by default. Restart your PC when prompted.
+
+2. After reboot, Ubuntu will launch automatically to finish setup. Create a Unix username and password when asked.
+
+3. To verify the installation, open PowerShell and run:
+   ```powershell
+   wsl -l -v
+   ```
+   You should see Ubuntu listed with VERSION 2.
+
+4. Launch Ubuntu from the Start menu, or type `wsl` in PowerShell/Terminal.
+
+5. Update packages inside Ubuntu:
+   ```bash
+   sudo apt update && sudo apt upgrade -y
+   ```
+
+> **Tip:** To install a specific Ubuntu version, run `wsl --install -d Ubuntu-24.04`.
+> Run `wsl --list --online` to see all available distributions.
+
+All build commands below should be run inside the WSL/Ubuntu terminal.
+
 ### Prerequisites
 
 - **WSL / Linux** — builds do not run under native Windows.
