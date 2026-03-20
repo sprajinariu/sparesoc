@@ -12,7 +12,24 @@ The PIO block is a programmable pin-level protocol engine inspired by the RP2040
 - **GPIO compatibility** — basic DIR/OUT/IN registers for simple pin control
 - **8 IRQ flags** — shared between state machines, exposed as single interrupt to Ibex
 
-PIO enables autonomous execution of bit-banged protocols (SPI, I2C, WS2812, JTAG, custom serial) without CPU intervention.
+PIO enables autonomous execution of bit-banged protocols without CPU intervention.
+
+## Use Cases
+
+PIO is designed for any situation where the CPU would otherwise waste cycles toggling pins or where precise, jitter-free timing is required:
+
+- **SPI master/slave** — clock + data lines driven at exact rates, full-duplex via two SMs
+- **I2C master** — open-drain clock stretching and arbitration handled in hardware
+- **WS2812 / NeoPixel LEDs** — strict 800 kHz timing with ±150 ns tolerance that software bit-bang cannot reliably meet
+- **UART TX/RX** — custom baud rates without a dedicated UART peripheral, multiple simultaneous channels
+- **JTAG / SWD** — debug probe interface at precise clock rates
+- **Parallel bus interfaces** — 8/16-bit parallel data capture or output (e.g., camera, LCD)
+- **Quadrature encoder** — decode rotary encoder signals with zero CPU overhead
+- **PWM** — up to 4 independent PWM channels with arbitrary resolution
+- **Custom serial protocols** — one-wire, Manchester encoding, infrared remote, DMX512
+- **Logic analyzer / pattern generator** — capture or replay pin transitions at SM clock rate
+
+Each state machine runs independently, so multiple protocols can operate simultaneously on different pins (e.g., SPI on pins 0-3 while driving WS2812 on pin 4).
 
 ## Architecture
 
@@ -40,8 +57,8 @@ The PIO block occupies the GPIO slot in the AXI4 crossbar:
 
 ```
                     ┌──────────────────┐
-   gpio_i[31:0] ──►│  2-FF Sync       │──► synced_pins ──► SM IN sources
-                    └──────────────────┘               ──► GPIO_IN register
+    gpio_i[31:0] ──►│  2-FF Sync       │──► synced_pins ──► SM IN sources
+                    └──────────────────┘                ──► GPIO_IN register
 
    SM0 out ──┐
    SM1 out ──┤     ┌──────────────────┐
@@ -49,7 +66,7 @@ The PIO block occupies the GPIO slot in the AXI4 crossbar:
    SM3 out ──┘     │  SM3>SM2>SM1>SM0 │──► gpio_oe[31:0]
    GPIO_OUT ──────►│  >GPIO compat    │
    GPIO_DIR ──────►│                  │
-                    └──────────────────┘
+                   └──────────────────┘
 ```
 
 **Pin mux priority:** SM3 > SM2 > SM1 > SM0 > GPIO compat registers. A pin belongs to an SM's driven set if it falls within that SM's configured OUT, SET, or SIDE-SET pin range and the SM is enabled. Pins not claimed by any enabled SM are controlled by GPIO compat registers.
