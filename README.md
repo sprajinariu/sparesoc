@@ -118,34 +118,16 @@ git submodule update --init --recursive
 Run `make help` to list all targets:
 
 ```
-make lint            - Run Verilator lint
-make sim             - Build Verilator simulator
-make sw-hello        - Build hello_test SW binary
-make run-hello       - Build and run hello_test on simulator
-make sw-uart         - Build uart_test SW binary
-make run-uart        - Build and run uart_test on simulator
-make sw-gpio         - Build gpio_test SW binary
-make run-gpio        - Build and run gpio_test on simulator
-make sw-i2c          - Build i2c_test SW binary
-make run-i2c         - Build and run i2c_test on simulator
-make sw-relu         - Build relu_test SW binary
-make run-relu        - Build and run relu_test on simulator
-make sw-vmac         - Build vmac_test SW binary
-make run-vmac        - Build and run vmac_test on simulator
-make sw-sg-dma       - Build sg_dma_test SW binary
-make run-sg-dma      - Build and run sg_dma_test on simulator
-make sw-softmax      - Build softmax_test SW binary
-make run-softmax     - Build and run softmax_test on simulator
-make sim-dual-uart   - Build dual-UART Verilator simulator
-make sw-uart-send    - Build uart_send SW binary
-make sw-uart-recv    - Build uart_recv SW binary
-make run-dual-uart   - Build and run dual-UART test
-make clean           - Remove build directory
-
-Options:
-  TRACE=1              - Enable FST waveform dump (e.g. make run-hello TRACE=1)
-  WAVES=1              - Enable trace + open GTKWave after sim (e.g. make run-dual-uart WAVES=1)
+make lint             Run Verilator lint
+make sim              Build Verilator simulator
+make sw-<test>        Build SW binary    (e.g. make sw-relu)
+make run-<test>       Build and simulate (e.g. make run-softmax)
+make clean            Remove build directory
 ```
+
+Available tests: `hello`, `uart`, `gpio`, `i2c`, `relu`, `vmac`, `sg-dma`, `softmax`, `dual-uart`.
+
+Options: `TRACE=1` enables FST waveform dump, `WAVES=1` enables trace + opens GTKWave.
 
 ### Waveform Viewing
 
