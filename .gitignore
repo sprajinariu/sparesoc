@@ -4,6 +4,7 @@ build/
 # Claude Code
 .claude/
 docs/plans/
+docs/brainstorms/
 *.o
 *.d
 *.elf
