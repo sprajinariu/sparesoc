@@ -7,27 +7,37 @@ A RISC-V System-on-Chip built on the lowRISC [Ibex](https://github.com/lowRISC/i
 ```
 opensoc_top (hw/rtl/opensoc_top.sv)
 ├── ibex_top_tracing    — Ibex RISC-V core with trace output
-├── axi_from_mem ×2     — OBI-to-AXI bridges (instr port + data port)
-├── axi_xbar            — AXI4 crossbar (2 masters × 6 slaves)
-├── axi_to_mem ×6       — AXI-to-memory bridges
+├── axi_from_mem ×6     — OBI-to-AXI bridges (CPU instr/data + 4 DMA masters)
+├── axi_xbar            — AXI4 crossbar (6 masters × 10 slaves)
+├── axi_to_mem ×10      — AXI-to-memory bridges
 ├── ram_1p              — 1 MB single-port SRAM
 ├── simulator_ctrl      — ASCII output and simulation halt
 ├── timer               — Timer with interrupt
 ├── uart                — UART with TX/RX FIFOs
 ├── gpio                — 32-bit GPIO with IRQ support
-└── i2c_controller      — I2C master controller
+├── i2c_controller      — I2C master controller
+├── relu_accel          — ReLU accelerator with DMA (hw/ip/relu_accel/)
+├── vec_mac             — INT8 vector MAC accelerator with DMA (hw/ip/vec_mac/)
+├── sg_dma              — Scatter-gather DMA engine (hw/ip/sg_dma/)
+└── softmax             — Softmax pipeline accelerator with DMA (hw/ip/softmax/)
 ```
 
 ### Memory Map
 
-| Peripheral     | Base Address | Size  |
-|----------------|--------------|-------|
-| Simulator Ctrl | `0x20000`    | 1 kB  |
-| Timer          | `0x30000`    | 1 kB  |
-| UART           | `0x40000`    | 1 kB  |
-| GPIO           | `0x50000`    | 1 kB  |
-| I2C            | `0x60000`    | 1 kB  |
-| RAM            | `0x100000`   | 1 MB  |
+| Peripheral     | Base Address | Size  | IRQ        |
+|----------------|--------------|-------|------------|
+| Simulator Ctrl | `0x20000`    | 1 kB  | —          |
+| Timer          | `0x30000`    | 1 kB  | mtimer     |
+| UART           | `0x40000`    | 1 kB  | fast[0]    |
+| GPIO           | `0x50000`    | 1 kB  | fast[1]    |
+| I2C            | `0x60000`    | 1 kB  | fast[2]    |
+| ReLU Accel     | `0x70000`    | 1 kB  | fast[3]    |
+| Vector MAC     | `0x80000`    | 1 kB  | fast[4]    |
+| SG DMA         | `0x90000`    | 1 kB  | fast[5]    |
+| Softmax        | `0xA0000`    | 1 kB  | fast[6]    |
+| RAM            | `0x100000`   | 1 MB  | —          |
+
+Register definitions for all peripherals: [`sw/include/opensoc_regs.h`](sw/include/opensoc_regs.h)
 
 Boot address: `0x100080` (RAM base + 0x80).
 
@@ -118,6 +128,14 @@ make sw-gpio         - Build gpio_test SW binary
 make run-gpio        - Build and run gpio_test on simulator
 make sw-i2c          - Build i2c_test SW binary
 make run-i2c         - Build and run i2c_test on simulator
+make sw-relu         - Build relu_test SW binary
+make run-relu        - Build and run relu_test on simulator
+make sw-vmac         - Build vmac_test SW binary
+make run-vmac        - Build and run vmac_test on simulator
+make sw-sg-dma       - Build sg_dma_test SW binary
+make run-sg-dma      - Build and run sg_dma_test on simulator
+make sw-softmax      - Build softmax_test SW binary
+make run-softmax     - Build and run softmax_test on simulator
 make sim-dual-uart   - Build dual-UART Verilator simulator
 make sw-uart-send    - Build uart_send SW binary
 make sw-uart-recv    - Build uart_recv SW binary
@@ -151,15 +169,20 @@ Saved waveform views (`.gtkw` files) are stored in `dv/verilator/`.
 ## Repository Structure
 
 ```
-hw/rtl/              — OpenSoC RTL (project source)
+hw/rtl/              — OpenSoC RTL (top-level + peripherals)
 hw/opensoc_top.core  — FuseSoC core file (dependencies & build targets)
 hw/lint/             — Verilator waiver files
 hw/ip/ibex/          — Ibex submodule (CPU core + shared sim RTL)
 hw/ip/pulp_axi/      — PULP AXI submodule (crossbar, bridges)
 hw/ip/common_cells/  — PULP common_cells submodule (required by pulp_axi)
 hw/ip/pulp_obi/      — PULP OBI submodule (for future use)
+hw/ip/relu_accel/    — ReLU accelerator IP (reusable DMA framework)
+hw/ip/vec_mac/       — Vector MAC accelerator IP (INT8 dot product)
+hw/ip/sg_dma/        — Scatter-gather DMA engine IP
+hw/ip/softmax/       — Softmax pipeline IP (3-pass, exp LUT)
 dv/verilator/        — Verilator simulation testbench
-sw/tests/            — Test software (hello, UART, GPIO, I2C, dual-UART)
+sw/include/          — Shared headers (opensoc_regs.h)
+sw/tests/            — Test software
 ```
 
 ## License
