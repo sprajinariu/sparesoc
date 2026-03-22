@@ -402,6 +402,164 @@ static void test_program_management(void) {
 }
 
 // -----------------------------------------------------------------------
+// Test 13: SIDE_PINDIR — sideset targets pindirs (OE) not output
+// -----------------------------------------------------------------------
+static void test_sideset_pindirs(void) {
+    pio_sm_restart(pio0, 0);
+    pio_sm_set_enabled(pio0, 0, false);
+    spin(4);
+
+    DEV_WRITE(PIO_GPIO_DIR, 0);
+    DEV_WRITE(PIO_GPIO_OUT, 0);
+
+    // With mandatory sideset (SIDE_EN=0), EVERY instruction applies sideset.
+    // Both instructions must carry sideset=1 or the implicit value 0 will
+    // clear the OE bit on alternate ticks.
+    // SIDE_PINDIR=1 → sideset targets pins_oe_q, not pins_out_q.
+    pio0->instr_mem[0] = pio_encode_set(pio_x, 0)
+                       | pio_encode_sideset(1, 1);  // sideset value=1
+    pio0->instr_mem[1] = pio_encode_jmp(0)
+                       | pio_encode_sideset(1, 1);  // must also carry sideset=1
+
+    pio_sm_config c = pio_get_default_sm_config();
+    sm_config_set_sideset(&c, 1, false, true);      // 1-bit, mandatory, pindirs
+    sm_config_set_sideset_pins(&c, 2);              // sideset base = gpio2
+    sm_config_set_wrap(&c, 0, 1);
+
+    pio_sm_init(pio0, 0, 0, &c);
+    pio_sm_set_enabled(pio0, 0, true);
+    spin(20);
+
+    uint32_t padoe = pio0->dbg_padoe;
+    check("SIDE_PINDIR: OE bit2=1 via sideset", (padoe >> 2) & 1, 1);
+
+    pio_sm_set_enabled(pio0, 0, false);
+}
+
+// -----------------------------------------------------------------------
+// Test 14: Optional sideset (SIDE_EN) — sideset only when enable bit set
+// -----------------------------------------------------------------------
+static void test_optional_sideset(void) {
+    pio_sm_restart(pio0, 0);
+    pio_sm_set_enabled(pio0, 0, false);
+    spin(4);
+
+    DEV_WRITE(PIO_GPIO_DIR, 0);
+    DEV_WRITE(PIO_GPIO_OUT, 0);
+
+    // Optional sideset: sideset_count=2 (1 enable + 1 data), SIDE_EN=1
+    // sideset_base=3 (gpio3 for output)
+    //
+    // Use SET PINDIRS (targets pins_oe_q) with sideset (targets pins_out_q)
+    // in the same instruction — no register conflict.
+    //
+    // Instr 0: SET PINDIRS, 31 + sideset opt value=1
+    //   → OE bits 0-4 set, gpio3 output = 1
+    // Instr 1: SET X, 0 (no sideset — enable=0, so gpio3 retains value)
+    // Instr 2: JMP 2 (spin)
+    pio0->instr_mem[0] = pio_encode_set(pio_pindirs, 31)
+                       | pio_encode_sideset_opt(1, 1);  // opt enable=1, value=1
+    pio0->instr_mem[1] = pio_encode_set(pio_x, 0);      // no sideset (enable=0)
+    pio0->instr_mem[2] = pio_encode_jmp(2);
+
+    pio_sm_config c = pio_get_default_sm_config();
+    sm_config_set_set_pins(&c, 0, 5);              // SET range = gpio[4:0]
+    sm_config_set_sideset(&c, 2, true, false);      // 2-bit (1 data + 1 enable), optional, output
+    sm_config_set_sideset_pins(&c, 3);              // sideset base = gpio3
+    sm_config_set_wrap(&c, 0, 2);
+
+    pio_sm_init(pio0, 0, 0, &c);
+    pio_sm_set_enabled(pio0, 0, true);
+    spin(30);
+
+    uint32_t padout = pio0->dbg_padout;
+
+    // gpio3 should be 1 (set by instr 0's sideset), and retained because
+    // instr 1 has no sideset (enable=0, so sideset not applied)
+    check("OPT_SIDESET: gpio3=1 after opt sideset", (padout >> 3) & 1, 1);
+
+    pio_sm_set_enabled(pio0, 0, false);
+}
+
+// -----------------------------------------------------------------------
+// Test 15: OUT EXEC — execute instruction shifted from OSR
+// -----------------------------------------------------------------------
+static void test_out_exec(void) {
+    pio_sm_restart(pio0, 0);
+    pio_sm_set_enabled(pio0, 0, false);
+    spin(4);
+
+    // Program:
+    //   0: PULL block        — get instruction encoding from TX FIFO
+    //   1: OUT EXEC, 16      — execute the shifted-out instruction
+    //   2: MOV ISR, X        — read back X register
+    //   3: PUSH noblock      — push result to RX FIFO
+    //   4: JMP 4             — spin
+    pio0->instr_mem[0] = pio_encode_pull(false, true);
+    pio0->instr_mem[1] = pio_encode_out(pio_exec_out, 16);
+    pio0->instr_mem[2] = pio_encode_mov(pio_isr, pio_x);
+    pio0->instr_mem[3] = pio_encode_push(false, false);
+    pio0->instr_mem[4] = pio_encode_jmp(4);
+
+    pio_sm_config c = pio_get_default_sm_config();
+    sm_config_set_out_shift(&c, false, false, 32);  // shift left, no autopull
+    sm_config_set_wrap(&c, 0, 4);
+
+    pio_sm_init(pio0, 0, 0, &c);
+    pio_sm_set_enabled(pio0, 0, true);
+
+    // Put "SET X, 23" instruction encoding into TX FIFO
+    // OUT shifts left, so 16 MSBs are the instruction
+    uint16_t set_x_23 = pio_encode_set(pio_x, 23);
+    pio_sm_put_blocking(pio0, 0, (uint32_t)set_x_23 << 16);
+    spin(100);
+
+    uint32_t rxval = pio_sm_get(pio0, 0);
+    check("OUT EXEC: SET X,23 via OSR", rxval, 23);
+
+    pio_sm_set_enabled(pio0, 0, false);
+}
+
+// -----------------------------------------------------------------------
+// Test 16: MOV EXEC — execute instruction from scratch register
+// -----------------------------------------------------------------------
+static void test_mov_exec(void) {
+    pio_sm_restart(pio0, 0);
+    pio_sm_set_enabled(pio0, 0, false);
+    spin(4);
+
+    // Program:
+    //   0: PULL block        — get instruction encoding from TX FIFO
+    //   1: MOV X, OSR        — copy to X
+    //   2: MOV EXEC, X       — execute instruction from X
+    //   3: MOV ISR, Y        — read back Y (target of the executed instruction)
+    //   4: PUSH noblock
+    //   5: JMP 5             — spin
+    pio0->instr_mem[0] = pio_encode_pull(false, true);
+    pio0->instr_mem[1] = pio_encode_mov(pio_x, pio_osr);
+    pio0->instr_mem[2] = pio_encode_mov(pio_exec_mov, pio_x);
+    pio0->instr_mem[3] = pio_encode_mov(pio_isr, pio_y);
+    pio0->instr_mem[4] = pio_encode_push(false, false);
+    pio0->instr_mem[5] = pio_encode_jmp(5);
+
+    pio_sm_config c = pio_get_default_sm_config();
+    sm_config_set_wrap(&c, 0, 5);
+
+    pio_sm_init(pio0, 0, 0, &c);
+    pio_sm_set_enabled(pio0, 0, true);
+
+    // Put "SET Y, 19" instruction encoding into TX FIFO
+    uint16_t set_y_19 = pio_encode_set(pio_y, 19);
+    pio_sm_put_blocking(pio0, 0, (uint32_t)set_y_19);
+    spin(100);
+
+    uint32_t rxval = pio_sm_get(pio0, 0);
+    check("MOV EXEC: SET Y,19 via X", rxval, 19);
+
+    pio_sm_set_enabled(pio0, 0, false);
+}
+
+// -----------------------------------------------------------------------
 // Main
 // -----------------------------------------------------------------------
 int main(void) {
@@ -419,6 +577,10 @@ int main(void) {
     test_sm_restart();
     test_forced_instr();
     test_program_management();
+    test_sideset_pindirs();
+    test_optional_sideset();
+    test_out_exec();
+    test_mov_exec();
 
     puts("\n--- Results: ");
     putdec(test_num - total_errors);
