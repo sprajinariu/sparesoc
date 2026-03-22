@@ -537,7 +537,7 @@ module pio_sm (
             // -----------------------------------------------------------
             3'b010: begin
               case (in_src)
-                3'd0: in_data = read_pins(pins_i, pinctrl_in_base_i, {1'b0, pinctrl_out_count_i[4:0]}); // PINS
+                3'd0: in_data = read_pins(pins_i, pinctrl_in_base_i, 6'd32); // PINS — read all, bit_count mask applied below
                 3'd1: in_data = x_q;
                 3'd2: in_data = y_q;
                 3'd3: in_data = 32'd0; // NULL
