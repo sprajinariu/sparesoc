@@ -25,9 +25,11 @@
 #include "pio_programs/i2c_slave.pio.h"
 
 #define SLAVE_ADDR 0x42
+#define TIMEOUT_CYCLES 5000   // Max spin iterations before declaring timeout
 
 static int test_num = 0;
 static int total_errors = 0;
+static int timed_out = 0;      // Set on first timeout — aborts remaining tests
 
 // -----------------------------------------------------------------------
 // Helpers
@@ -76,11 +78,45 @@ static void spin(int n) {
     for (volatile int i = 0; i < n; i++) ;
 }
 
+static void dump_debug_state(void) {
+    puts("  DEBUG: I2C STATUS=");
+    puthex_val(DEV_READ(I2C_STATUS, 0));
+    puts(" PIO FSTAT=");
+    puthex_val(pio0->fstat);
+    puts(" FDEBUG=");
+    puthex_val(pio0->fdebug);
+    puts(" IRQ=");
+    puthex_val(pio0->irq);
+    puts("\n  SM0: ADDR=");
+    puthex_val(pio0->sm[0].addr);
+    puts(" EXECCTRL=");
+    puthex_val(pio0->sm[0].execctrl);
+    puts(" PINCTRL=");
+    puthex_val(pio0->sm[0].pinctrl);
+    puts("\n  SM1: ADDR=");
+    puthex_val(pio0->sm[1].addr);
+    puts("\n  GPIO: IN=");
+    puthex_val(DEV_READ(PIO_GPIO_IN, 0));
+    puts(" OUT=");
+    puthex_val(DEV_READ(PIO_GPIO_OUT, 0));
+    puts(" OE=");
+    puthex_val(DEV_READ(PIO_GPIO_DIR, 0));
+    puts("\n");
+}
+
 // -----------------------------------------------------------------------
 // HW I2C master helpers
 // -----------------------------------------------------------------------
-static void i2c_wait_idle(void) {
-    while (DEV_READ(I2C_STATUS, 0) & I2C_STATUS_BUSY) ;
+static int i2c_wait_idle(void) {
+    for (int i = 0; i < TIMEOUT_CYCLES; i++) {
+        if (!(DEV_READ(I2C_STATUS, 0) & I2C_STATUS_BUSY))
+            return 0;
+    }
+    puts("  TIMEOUT: i2c_wait_idle\n");
+    dump_debug_state();
+    total_errors++;
+    timed_out = 1;
+    return -1;
 }
 
 // Send START + address byte (7-bit addr + W bit)
@@ -134,12 +170,22 @@ static void setup_pio_slave(void) {
     spin(100);
 }
 
-// Read a byte from the PIO slave RX FIFO (SM0) and clear its IRQ
-static uint8_t slave_read_byte(void) {
-    uint32_t raw = pio_sm_get_blocking(pio0, 0);
-    uint8_t byte = (raw >> 24) & 0xFF;
-    pio0->irq = (1u << 0);  // Clear SM0's IRQ flag
-    return byte;
+// Read a byte from the PIO slave RX FIFO (SM0) with timeout
+// Returns byte on success, 0xFFFFFFFF on timeout
+static uint32_t slave_read_byte(void) {
+    for (int i = 0; i < TIMEOUT_CYCLES; i++) {
+        if (!pio_sm_is_rx_fifo_empty(pio0, 0)) {
+            uint32_t raw = pio_sm_get(pio0, 0);
+            uint8_t byte = raw & 0xFF;
+            pio0->irq = (1u << 0);  // Clear SM0's IRQ flag
+            return byte;
+        }
+    }
+    puts("  TIMEOUT: slave_read_byte (RX FIFO empty)\n");
+    dump_debug_state();
+    total_errors++;
+    timed_out = 1;
+    return 0xFFFFFFFF;
 }
 
 // -----------------------------------------------------------------------
@@ -167,7 +213,8 @@ static void test_single_byte_write(void) {
     i2c_master_start_write(SLAVE_ADDR);
 
     // Read address byte from PIO slave
-    uint8_t addr_byte = slave_read_byte();
+    uint32_t addr_byte = slave_read_byte();
+    if (addr_byte == 0xFFFFFFFF) return;  // timed out
     check("Slave received addr byte", addr_byte, (SLAVE_ADDR << 1) | 0);
 
     // Check ACK was received by master
@@ -178,7 +225,8 @@ static void test_single_byte_write(void) {
     i2c_master_send_byte_stop(0xAB);
 
     // Read data byte from PIO slave
-    uint8_t data = slave_read_byte();
+    uint32_t data = slave_read_byte();
+    if (data == 0xFFFFFFFF) return;  // timed out
     check("Slave received data 0xAB", data, 0xAB);
 }
 
@@ -199,13 +247,15 @@ static void test_multi_byte_write(void) {
     i2c_master_start_write(SLAVE_ADDR);
 
     // Read and release address byte
-    uint8_t addr = slave_read_byte();
+    uint32_t addr = slave_read_byte();
+    if (addr == 0xFFFFFFFF) return;
     check("Multi: addr byte", addr, (SLAVE_ADDR << 1) | 0);
 
     // Send data bytes
     for (int i = 0; i < 3; i++) {
         i2c_master_send_byte(tx_data[i]);
-        uint8_t got = slave_read_byte();
+        uint32_t got = slave_read_byte();
+        if (got == 0xFFFFFFFF) return;
         if (i == 0) check("Multi: data[0]=0x11", got, 0x11);
         else if (i == 1) check("Multi: data[1]=0x22", got, 0x22);
         else check("Multi: data[2]=0x33", got, 0x33);
@@ -213,7 +263,8 @@ static void test_multi_byte_write(void) {
 
     // Last byte with STOP
     i2c_master_send_byte_stop(tx_data[3]);
-    uint8_t last = slave_read_byte();
+    uint32_t last = slave_read_byte();
+    if (last == 0xFFFFFFFF) return;
     check("Multi: data[3]=0x44", last, 0x44);
 }
 
@@ -231,8 +282,7 @@ static void test_data_patterns(void) {
     spin(100);
 
     i2c_master_start_write(SLAVE_ADDR);
-    slave_read_byte();  // address byte — discard
-    pio0->irq = (1u << 0);  // Already cleared by slave_read_byte, but be safe
+    if (slave_read_byte() == 0xFFFFFFFF) return;  // address byte
 
     for (int i = 0; i < 4; i++) {
         if (i < 3)
@@ -240,7 +290,8 @@ static void test_data_patterns(void) {
         else
             i2c_master_send_byte_stop(patterns[i]);
 
-        uint8_t got = slave_read_byte();
+        uint32_t got = slave_read_byte();
+        if (got == 0xFFFFFFFF) return;
         if (i == 0) check("Pattern 0x00", got, 0x00);
         else if (i == 1) check("Pattern 0x55", got, 0x55);
         else if (i == 2) check("Pattern 0xAA", got, 0xAA);
@@ -261,19 +312,23 @@ static void test_back_to_back(void) {
 
     // First transaction
     i2c_master_start_write(SLAVE_ADDR);
-    slave_read_byte();  // address
+    if (slave_read_byte() == 0xFFFFFFFF) return;  // address
     i2c_master_send_byte_stop(0xDE);
-    uint8_t got1 = slave_read_byte();
+    uint32_t got1 = slave_read_byte();
+    if (got1 == 0xFFFFFFFF) return;
     check("Back-to-back: tx1 data=0xDE", got1, 0xDE);
 
-    // Small gap
+    // Restart slave between transactions (PIO program has no STOP detection)
+    pio_sm_restart(pio0, 0);
+    pio_sm_set_enabled(pio0, 0, true);
     spin(200);
 
-    // Second transaction (slave should be back at wait_start)
+    // Second transaction
     i2c_master_start_write(SLAVE_ADDR);
-    slave_read_byte();  // address
+    if (slave_read_byte() == 0xFFFFFFFF) return;  // address
     i2c_master_send_byte_stop(0xAD);
-    uint8_t got2 = slave_read_byte();
+    uint32_t got2 = slave_read_byte();
+    if (got2 == 0xFFFFFFFF) return;
     check("Back-to-back: tx2 data=0xAD", got2, 0xAD);
 }
 
@@ -285,10 +340,11 @@ int main(void) {
 
     setup_pio_slave();
     test_program_load();
-    test_single_byte_write();
-    test_multi_byte_write();
-    test_data_patterns();
-    test_back_to_back();
+    if (!timed_out) test_single_byte_write();
+    if (!timed_out) test_multi_byte_write();
+    if (!timed_out) test_data_patterns();
+    if (!timed_out) test_back_to_back();
+    if (timed_out) puts("\n*** ABORTED: timeout — remaining tests skipped ***\n");
 
     puts("\n--- Results: ");
     putdec(test_num - total_errors);

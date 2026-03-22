@@ -176,13 +176,13 @@ static inline uint8_t pio_i2c_slave_handle_write(PIO pio, uint sm_rx,
                                                    uint8_t *buf, uint32_t len) {
     // Read address byte (left-shifted in ISR)
     uint32_t raw = pio_sm_get_blocking(pio, sm_rx);
-    uint8_t addr_byte = (raw >> 24) & 0xFF;
+    uint8_t addr_byte = raw & 0xFF;
     pio->irq = (1u << sm_rx);  // W1C: clear SM's IRQ flag to release SM
 
     // Read data bytes
     for (uint32_t i = 0; i < len; i++) {
         raw = pio_sm_get_blocking(pio, sm_rx);
-        buf[i] = (raw >> 24) & 0xFF;
+        buf[i] = raw & 0xFF;
         pio->irq = (1u << sm_rx);
     }
 
