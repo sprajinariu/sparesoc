@@ -7,19 +7,19 @@ A RISC-V System-on-Chip built on the lowRISC [Ibex](https://github.com/lowRISC/i
 ```
 opensoc_top (hw/rtl/opensoc_top.sv)
 ├── ibex_top_tracing    — Ibex RISC-V core with trace output
-├── axi_from_mem ×7     — OBI-to-AXI bridges (CPU instr/data + 5 DMA masters)
-├── axi_xbar            — AXI4 crossbar (7 masters × 10 slaves)
-├── axi_to_mem ×10      — AXI-to-memory bridges
+├── axi_from_mem ×N     — OBI-to-AXI bridges (CPU instr/data + PIO DMA + accel DMAs)
+├── axi_xbar            — AXI4 crossbar (parameterized masters × slaves)
+├── axi_to_mem ×M       — AXI-to-memory bridges
 ├── ram_1p              — 1 MB single-port SRAM
 ├── simulator_ctrl      — ASCII output and simulation halt
 ├── timer               — Timer with interrupt
 ├── uart                — UART with TX/RX FIFOs
 ├── pio                 — Programmable I/O: 4 state machines, GPIO compat, DMA (hw/ip/pio/)
 ├── i2c_controller      — I2C master controller
-├── relu_accel          — ReLU accelerator with DMA (hw/ip/relu_accel/)
-├── vec_mac             — INT8 vector MAC accelerator with DMA (hw/ip/vec_mac/)
-├── sg_dma              — Scatter-gather DMA engine (hw/ip/sg_dma/)
-└── softmax             — Softmax pipeline accelerator with DMA (hw/ip/softmax/)
+├── relu_accel          — ReLU accelerator with DMA (hw/ip/relu_accel/) [optional]
+├── vec_mac             — INT8 vector MAC accelerator with DMA (hw/ip/vec_mac/) [optional]
+├── sg_dma              — Scatter-gather DMA engine (hw/ip/sg_dma/) [optional]
+└── softmax             — Softmax pipeline accelerator with DMA (hw/ip/softmax/) [optional]
 ```
 
 ### Memory Map
@@ -122,12 +122,66 @@ make lint             Run Verilator lint
 make sim              Build Verilator simulator
 make sw-<test>        Build SW binary    (e.g. make sw-relu)
 make run-<test>       Build and simulate (e.g. make run-softmax)
+make synth            Full FPGA synthesis (FuseSoC setup + Vivado batch)
+make synth-setup      FuseSoC setup only (collect sources)
 make clean            Remove build directory
 ```
 
 Available tests: `hello`, `uart`, `pio`, `pio-sdk`, `pio-i2c`, `i2c`, `relu`, `vmac`, `sg-dma`, `softmax`, `dual-uart`, `i2c-loopback`.
 
 Options: `TRACE=1` enables FST waveform dump, `WAVES=1` enables trace + opens GTKWave.
+
+### FPGA Synthesis (Basys 3)
+
+Targets the Digilent Basys 3 (Xilinx Artix-7 XC7A35T). Requires [Vivado](https://www.xilinx.com/products/design-tools/vivado.html) (free WebPACK edition works) installed in WSL/Linux.
+
+**Vivado setup** (add to `~/.bashrc`):
+
+```bash
+source /opt/Xilinx/Vivado/2025.2/settings64.sh
+```
+
+**One-step build** (FuseSoC setup + Vivado batch synthesis):
+
+```bash
+make synth
+```
+
+**Two-step build** (useful when iterating in the Vivado GUI):
+
+1. Collect source files:
+   ```bash
+   make synth-setup
+   ```
+2. Run Vivado:
+   ```bash
+   vivado -mode batch -source hw/fpga/basys3/synth.tcl
+   ```
+
+Reports are written to `build/vivado/`:
+- `post_synth_timing.txt` / `post_synth_utilization.txt` — after synthesis
+- `post_route_timing.txt` / `post_route_utilization.txt` — after place & route
+- `opensoc_basys3.bit` — final bitstream
+
+**Clean rebuild:**
+
+```bash
+make clean && make synth
+```
+
+**Pin mapping:**
+
+| Board resource | SoC signal        | Notes                           |
+|----------------|-------------------|---------------------------------|
+| LED[15:0]      | gpio_o[15:0]      | Active-high                     |
+| SW[15:0]       | gpio_i[15:0]      | Direct sample                   |
+| Pmod JB[7:0]   | gpio[23:16]       | Bidirectional with OE           |
+| Pmod JA[0]     | I2C SDA           | Open-drain (external pullup)    |
+| Pmod JA[1]     | I2C SCL           | Open-drain (external pullup)    |
+| USB-UART       | UART TX/RX        | Via on-board FTDI bridge        |
+| btnC           | Reset             | Active-high, inverted internally|
+
+Clock: 100 MHz board oscillator → PLL → 50 MHz system clock. RAM: 64 KB block RAM (vs 1 MB in simulation). Accelerators (ReLU, VMAC, SG DMA, Softmax) are disabled on Basys 3 to fit the XC7A35T — controlled by `Enable*` parameters in `opensoc_top`.
 
 ### Waveform Viewing
 
@@ -163,6 +217,7 @@ hw/ip/relu_accel/    — ReLU accelerator IP (reusable DMA framework)
 hw/ip/vec_mac/       — Vector MAC accelerator IP (INT8 dot product)
 hw/ip/sg_dma/        — Scatter-gather DMA engine IP
 hw/ip/softmax/       — Softmax pipeline IP (3-pass, exp LUT)
+hw/fpga/             — FPGA targets (Basys 3 constraints + wrapper)
 dv/verilator/        — Verilator simulation testbench
 sw/lib/              — Pico SDK-compatible PIO library (header-only)
 sw/include/          — Shared headers (opensoc_regs.h)

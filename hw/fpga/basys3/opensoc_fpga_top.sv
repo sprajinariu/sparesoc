@@ -16,7 +16,7 @@
 //   USB-UART   ↔ UART TX/RX          — directly connected to FTDI bridge
 //   btnC       → reset               — active-high, inverted internally
 
-module opensoc_fpga_top (
+module opensoc_fpga_top import axi_pkg::*; (
   input  CLK100MHZ,
 
   // Buttons
@@ -91,10 +91,23 @@ module opensoc_fpga_top (
   BUFG u_bufg_clk (.I(clk_50_unbuf),  .O(clk_50));
 
   // -------------------------------------------------------------------------
-  // Reset: active-high button + PLL lock
+  // Reset: active-high button + PLL lock → synchronous deassertion
   // -------------------------------------------------------------------------
+  logic rst_raw_n;
+  logic [2:0] rst_sync_q;
   logic rst_n;
-  assign rst_n = pll_locked & ~btnC;
+
+  assign rst_raw_n = pll_locked & ~btnC;
+
+  // 3-FF synchronizer: async assert, synchronous deassert
+  always_ff @(posedge clk_50 or negedge rst_raw_n) begin
+    if (!rst_raw_n)
+      rst_sync_q <= 3'b000;
+    else
+      rst_sync_q <= {rst_sync_q[1:0], 1'b1};
+  end
+
+  assign rst_n = rst_sync_q[2];
 
   // -------------------------------------------------------------------------
   // GPIO wiring
@@ -135,8 +148,13 @@ module opensoc_fpga_top (
   // SoC instance
   // -------------------------------------------------------------------------
   opensoc_top #(
-    .RamDepth    (16384),   // 64 KB (16384 × 4 bytes)
-    .SRAMInitFile("")
+    .RamDepth        (16384),   // 64 KB (16384 × 4 bytes)
+    .SRAMInitFile    (""),
+    .EnableReLU      (1'b0),
+    .EnableVMAC      (1'b0),
+    .EnableSgDma     (1'b0),
+    .EnableSoftmax   (1'b0),
+    .XbarLatencyMode (axi_pkg::CUT_ALL_PORTS)
   ) u_soc (
     .IO_CLK    (clk_50),
     .IO_RST_N  (rst_n),
