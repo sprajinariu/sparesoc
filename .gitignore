@@ -19,3 +19,6 @@ __pycache__/
 # Vivado temp files
 .Xil/
 tight_setup_hold_pins.txt
+vivado.jou
+vivado.log
+clockInfo.txt
