@@ -44,11 +44,13 @@ help:
 	@echo "  make sw-i2c-loopback  - Build I2C loopback test SW binary"
 	@echo "  make run-i2c-loopback - Build and run I2C loopback test"
 	@echo "  make synth-setup     - FuseSoC setup only (collect sources)"
-	@echo "  make synth           - Full FPGA synthesis (setup + Vivado batch)"
-	@echo "  make yosys-synth     - ASIC synthesis (sv2v + Yosys, generic gates)"
+	@echo "  make synth           - Synthesize (default: OpenLane 2 / Sky130)"
+	@echo "  make synth FLOW=fpga - FPGA synthesis (Vivado / Basys 3)"
+	@echo "  make synth FLOW=yosys- ASIC synthesis (sv2v + Yosys, generic gates)"
 	@echo "  make clean           - Remove build directory"
 	@echo ""
 	@echo "Options:"
+	@echo "  FLOW=ol2|fpga|yosys  - Select synthesis flow (default: ol2)"
 	@echo "  TRACE=1              - Enable FST waveform dump (e.g. make run-hello TRACE=1)"
 	@echo "  WAVES=1              - Enable trace + open GTKWave after sim (e.g. make run-dual-uart WAVES=1)"
 
@@ -246,18 +248,39 @@ run-i2c-loopback: sw-i2c-loopback
 	@cat $(I2C_LB_SIM_DIR)/opensoc_top.log
 	$(if $(WAVES),gtkwave $(I2C_LB_SIM_DIR)/sim.fst &,)
 
-# FPGA synthesis (Basys 3)
-# Vivado must be on PATH: source /opt/Xilinx/Vivado/2025.2/settings64.sh
+# Synthesis: make synth [FLOW=ol2|fpga|yosys]
+#   ol2   — OpenLane 2 / Sky130 (default) — requires: pip install openlane; volare enable
+#   fpga  — Vivado / Basys 3 XC7A35T     — requires: Vivado on PATH
+#   yosys — Yosys generic gates           — requires: sv2v, yosys
+FLOW ?= ol2
 VIVADO ?= vivado
+
+SYNTH_SRC_DIR = build/opensoc_fpga_basys3_0/synth-vivado/src
 
 .PHONY: synth synth-setup
 synth: synth-setup
+ifeq ($(FLOW),fpga)
 	$(VIVADO) -mode batch -source hw/fpga/basys3/synth.tcl
+else ifeq ($(FLOW),yosys)
+	bash hw/asic/synth.sh
+else ifeq ($(FLOW),ol2)
+	bash hw/asic/openlane2/run.sh
+else
+	$(error Unknown FLOW=$(FLOW). Use: ol2, fpga, or yosys)
+endif
 
 synth-setup:
-	$(FUSESOC) $(CORES_ROOT) run --target=synth --setup opensoc:fpga:basys3
-
-# Yosys ASIC synthesis (sv2v + Yosys, generic gates)
-.PHONY: yosys-synth
-yosys-synth: synth-setup
-	bash hw/asic/synth.sh
+	@if [ -d "$(SYNTH_SRC_DIR)" ]; then \
+	  echo "synth-setup: $(SYNTH_SRC_DIR) exists, skipping (use 'make clean' to force)"; \
+	else \
+	  LOCK=build/.synth-setup.lock; \
+	  mkdir -p build; \
+	  exec 9>"$$LOCK"; \
+	  flock 9; \
+	  if [ -d "$(SYNTH_SRC_DIR)" ]; then \
+	    echo "synth-setup: completed by another process, skipping"; \
+	  else \
+	    $(FUSESOC) $(CORES_ROOT) run --target=synth --setup opensoc:fpga:basys3; \
+	  fi; \
+	  exec 9>&-; \
+	fi
