@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Git Commits
+
+Do not include `Co-Authored-By` trailers in commit messages.
+
 ## Project Overview
 
 OpenSoC is a RISC-V SoC built on the lowRISC **Ibex** CPU core. The top-level module (`opensoc_top`) uses an AXI4 crossbar (`axi_xbar` from PULP) to connect the Ibex CPU (instruction fetch + data port) to 1 MB SRAM, a simulation control module, and a timer.
@@ -133,7 +137,7 @@ Configurable via FuseSoC `vlogdefine` (command-line `+define+`): `RV32M`, `RV32B
 - Master order: instr, data, [accel DMAs in order], PIO DMA (always last)
 - Slave order: RAM, SimCtrl, Timer, UART, PIO, I2C, [accel ctrls in order]
 - `MaxRequests = 2` on all bridges; `MaxMstTrans = 4`, `MaxSlvTrans = 4` on xbar
-- ATOPs disabled; `XbarLatencyMode`: `CUT_ALL_PORTS` in unified config (pipeline registers for timing closure; harmless for ASIC); sim uses `NO_LATENCY` via direct parameter in the sim target
+- ATOPs disabled; `XbarLatencyMode`: `CUT_ALL_PORTS` on all targets (pipeline registers for timing closure; harmless for simulation and ASIC)
 
 ## FPGA Configuration
 
