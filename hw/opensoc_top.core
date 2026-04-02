@@ -15,6 +15,7 @@ filesets:
       - "opensoc:ip:sg_dma"
       - "opensoc:ip:softmax"
       - "opensoc:ip:pio"
+      - "opensoc:ip:opentitan_aes"
     files:
       - rtl/opensoc_config_pkg.sv
       - rtl/opensoc_top_fpga_config_pkg.sv
@@ -22,6 +23,7 @@ filesets:
       - rtl/opensoc_top.sv
       - rtl/uart.sv
       - rtl/i2c_controller.sv
+      - rtl/crypto_cluster.sv
     file_type: systemVerilogSource
 
   files_lint_verilator:
