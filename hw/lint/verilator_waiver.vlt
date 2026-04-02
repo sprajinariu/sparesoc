@@ -64,8 +64,8 @@ lint_off -rule UNUSEDSIGNAL  -file "*/rtl/opensoc_dual_uart.sv"
 lint_off -rule UNUSEDSIGNAL  -file "*/rtl/opensoc_i2c_loopback.sv"
 
 // Crypto cluster: unused TL-UL opcode params, NumAlerts hides upper scope
-lint_off -rule UNUSEDPARAM   -file "*/rtl/crypto_cluster.sv"
-lint_off -rule VARHIDDEN     -file "*/rtl/crypto_cluster.sv"
+lint_off -rule UNUSEDPARAM   -file "*/top/crypto_cluster.sv"
+lint_off -rule VARHIDDEN     -file "*/top/crypto_cluster.sv"
 
 // OpenTitan AES IP: third-party code, waive all lint warnings
 lint_off -rule WIDTHTRUNC    -file "*/opensoc_ip_opentitan_aes_0/*"
