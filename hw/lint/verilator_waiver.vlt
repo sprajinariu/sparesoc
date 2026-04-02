@@ -19,6 +19,7 @@ lint_off -rule WIDTH -file "*/rtl/opensoc_top.sv"
 
 // Packed struct literal fields (xbar_cfg_t, xbar_rule_32_t) trigger WIDTHCONCAT
 lint_off -rule WIDTHCONCAT -file "*/rtl/opensoc_top.sv"
+lint_off -rule WIDTHCONCAT -file "*/rtl/opensoc_derived_config_pkg.sv"
 
 // Pre-existing ibex/lowrisc warnings that surface with AXI dependencies
 lint_off -rule REDEFMACRO    -file "*prim_assert*"
@@ -55,6 +56,17 @@ lint_off -rule UNUSEDSIGNAL  -file "*/rtl/opensoc_dual_uart.sv"
 
 // I2C loopback wrapper: unused output signals (i2c_*_o, gpio_o, uart_tx)
 lint_off -rule UNUSEDSIGNAL  -file "*/rtl/opensoc_i2c_loopback.sv"
+
+// Crypto cluster: unused TL-UL opcode params, NumAlerts hides upper scope
+lint_off -rule UNUSEDPARAM   -file "*/rtl/crypto_cluster.sv"
+lint_off -rule VARHIDDEN     -file "*/rtl/crypto_cluster.sv"
+
+// OpenTitan AES IP: third-party code, waive all lint warnings
+lint_off -rule WIDTHTRUNC    -file "*/opensoc_ip_opentitan_aes_0/*"
+lint_off -rule WIDTHEXPAND   -file "*/opensoc_ip_opentitan_aes_0/*"
+lint_off -rule DECLFILENAME  -file "*/opensoc_ip_opentitan_aes_0/*"
+lint_off -rule UNUSEDPARAM   -file "*/opensoc_ip_opentitan_aes_0/*"
+lint_off -rule UNUSEDSIGNAL  -file "*/opensoc_ip_opentitan_aes_0/*"
 
 // Third-party IP: PULP AXI modules — waive all lint rules
 lint_off -rule WIDTH          -file "*/pulp-platform.org*axi*"

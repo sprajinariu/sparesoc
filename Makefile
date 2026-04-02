@@ -12,7 +12,8 @@ CORES_ROOT := --cores-root=. \
               --cores-root=hw/ip/vec_mac \
               --cores-root=hw/ip/sg_dma \
               --cores-root=hw/ip/softmax \
-              --cores-root=hw/ip/pio
+              --cores-root=hw/ip/pio \
+              --cores-root=hw/ip/opentitan_aes
 
 TRACE  ?=
 WAVES  ?=
@@ -49,6 +50,7 @@ SW_DIR_relu    := $(SW_TEST_DIR)/relu_test
 SW_DIR_vmac    := $(SW_TEST_DIR)/vmac_test
 SW_DIR_sg-dma  := $(SW_TEST_DIR)/sg_dma_test
 SW_DIR_softmax := $(SW_TEST_DIR)/softmax_test
+SW_DIR_aes     := $(SW_TEST_DIR)/aes_test
 
 ELF_hello   := $(SW_DIR)/hello_test/hello_test.elf
 ELF_uart    := $(SW_TEST_DIR)/uart_test/uart_test.elf
@@ -60,6 +62,7 @@ ELF_relu    := $(SW_TEST_DIR)/relu_test/relu_test.elf
 ELF_vmac    := $(SW_TEST_DIR)/vmac_test/vmac_test.elf
 ELF_sg-dma  := $(SW_TEST_DIR)/sg_dma_test/sg_dma_test.elf
 ELF_softmax := $(SW_TEST_DIR)/softmax_test/softmax_test.elf
+ELF_aes     := $(SW_TEST_DIR)/aes_test/aes_test.elf
 
 # ── Simulator top registry ────────────────────────────────────────────────────
 
@@ -92,6 +95,7 @@ help:
 	@echo "  run-vmac         Vector MAC: 12 tests incl. saturation and multi-kick"
 	@echo "  run-sg-dma       SG-DMA: chaining, zero-length descriptors, throughput"
 	@echo "  run-softmax      Softmax: uniform, one-hot, accuracy vs. C reference"
+	@echo "  run-aes          AES-128 ECB encrypt/decrypt with NIST test vector"
 	@echo "  run-dual-uart    Two-SoC UART handshake and 8-round data exchange"
 	@echo "  run-i2c-loopback I2C master + PIO slave: write, read, clock stretching"
 	@echo ""
